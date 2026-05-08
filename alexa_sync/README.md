@@ -1,12 +1,13 @@
 # Alexa Sync
 
-Synchronisiert zwei Home-Assistant-`todo`-Listen bidirektional.
+Synchronisiert die Alexa-Einkaufsliste mit einer Home-Assistant-`todo`-Liste
+oder zwei vorhandene Home-Assistant-`todo`-Listen miteinander.
 
 Typischer Einsatz:
 
 - Alexa schreibt per Sprachbefehl auf die Alexa-Einkaufsliste.
 - Das Add-on kopiert neue Eintraege in die Bring-Einkaufsliste.
-- Abgehakte Eintraege in Bring werden zurueck auf die Alexa-Liste synchronisiert.
+- Abgehakte Eintraege in Bring werden aus der aktiven Alexa-Liste entfernt.
 
 ## Konfiguration
 
@@ -14,36 +15,37 @@ Die bevorzugte Konfiguration erfolgt ueber die **Weboberflaeche** des Add-ons
 oder ueber den Sidebar-Eintrag **Alexa Sync**. Dort werden vorhandene
 `todo.*`-Entities als Dropdown angezeigt.
 
-Es gibt zwei Modi:
+Modi:
 
-- **Home Assistant Liste ↔ Home Assistant Liste**: synchronisiert zwei
+- **Alexa direkt - Home Assistant Liste**: nutzt Chromium/Selenium direkt im
+  Add-on. Es ist kein separates Alexa-Server-Add-on erforderlich.
+- **Home Assistant Liste - Home Assistant Liste**: synchronisiert zwei
   vorhandene `todo.*`-Entities.
-- **Alexa Shopping List Server ↔ Home Assistant Liste**: nutzt den
-  Selenium/WebSocket-Server aus
-  `madmachinations/home-assistant-alexa-shopping-list`, um die Alexa-
-  Einkaufsliste mit einer HA-`todo`-Entity zu synchronisieren.
+- **Externer Alexa Shopping List Server - Home Assistant Liste**:
+  Kompatibilitaetsmodus fuer den Selenium/WebSocket-Server aus
+  `madmachinations/home-assistant-alexa-shopping-list`.
 
 Die YAML-Optionen bleiben als Start-/Fallbackwerte erhalten.
 
 | Option | Beschreibung |
 | --- | --- |
-| `list_a` | Erste Home-Assistant-To-do-Entity, z.B. `todo.alexa_einkaufsliste`. |
-| `list_b` | Zweite Home-Assistant-To-do-Entity, z.B. `todo.einkaufsliste_2`. |
-| `mode` | `ha_todo_pair` oder `alexa_server`. |
-| `alexa_server_host` | Host/IP des Alexa-Shopping-List-Servers. |
-| `alexa_server_port` | Port des Alexa-Shopping-List-Servers, Standard `4000`. |
-| `ha_list` | HA-To-do-Liste fuer den Alexa-Server-Modus. |
+| `mode` | `internal_alexa`, `ha_todo_pair` oder `alexa_server`. |
+| `amazon_domain` | Amazon-Domain fuer den direkten Alexa-Modus, z.B. `amazon.de`. |
+| `ha_list` | HA-To-do-Liste fuer den direkten Alexa- oder Server-Modus. |
+| `list_a` | Erste Home-Assistant-To-do-Entity fuer den HA-Listenmodus. |
+| `list_b` | Zweite Home-Assistant-To-do-Entity fuer den HA-Listenmodus. |
+| `alexa_server_host` | Host/IP eines externen Alexa-Shopping-List-Servers. |
+| `alexa_server_port` | Port eines externen Alexa-Shopping-List-Servers, Standard `4000`. |
 | `interval_seconds` | Polling-Intervall in Sekunden. |
-| `sync_completed` | Synchronisiert `completed`/`needs_action` zwischen beiden Listen. |
-| `remove_completed` | Entfernt abgeschlossene Eintraege nach erfolgreichem Sync aus beiden Listen. |
+| `sync_completed` | Synchronisiert erledigte Eintraege. |
+| `remove_completed` | Entfernt abgeschlossene Eintraege nach erfolgreichem Sync aus der HA-Liste. |
 | `log_level` | Log-Level des Add-ons. |
 
-## Verhalten
+## Amazon-Session
 
-- Neue offene Eintraege werden in beide Richtungen angelegt.
-- Eintraege werden anhand des normalisierten Artikelnamens abgeglichen.
-- Bei widerspruechlichen gleichzeitigen Statusaenderungen gewinnt `completed`.
-- Im Alexa-Server-Modus bedeutet ein abgehakter HA/Bring-Eintrag: Der Eintrag
-  wird aus der aktiven Alexa-Liste entfernt.
-- Direkte Loeschungen werden nicht synchronisiert. Das verhindert Datenverlust,
-  wenn eine Liste temporaer nicht verfuegbar ist.
+Amazon stellt keine offizielle stabile API fuer Alexa-Einkaufslisten bereit. Das
+Add-on speichert deshalb keine Amazon-Zugangsdaten. Die Weboberflaeche kann
+einmalig einen Login-Versuch ausfuehren und speichert danach nur die Browser-
+Session-Cookies. Wenn Amazon die Session beendet oder den automatisierten Login
+blockiert, muessen die Cookies erneut importiert oder die Session erneut
+gespeichert werden.

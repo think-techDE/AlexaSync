@@ -1,14 +1,13 @@
 # Alexa Sync
 
-Home-Assistant-Add-on-Repository fuer die bidirektionale Synchronisation zweier
-Home-Assistant-`todo`-Listen, zum Beispiel Alexa Einkaufsliste und Bring
-Einkaufsliste.
+Home-Assistant-Add-on-Repository fuer die Synchronisation der Alexa-
+Einkaufsliste mit einer Home-Assistant-`todo`-Liste, zum Beispiel Bring.
 
-Seit Version `0.3.0` kann das Add-on alternativ mit dem Alexa-Shopping-List-
-Server aus dem Projekt
-[`madmachinations/home-assistant-alexa-shopping-list`](https://github.com/madmachinations/home-assistant-alexa-shopping-list)
-verbunden werden. Das ist der relevante Workaround, weil Amazon den direkten
-Drittanbieterzugriff auf Alexa-Einkaufslisten abgeschaltet hat.
+Seit Version `0.4.0` bringt das Add-on den Alexa-Workaround direkt mit:
+Chromium/Selenium laeuft im Add-on und liest die Alexa-Einkaufsliste mit
+importierten Amazon-Session-Cookies. Das basiert auf dem technischen Ansatz von
+[`madmachinations/home-assistant-alexa-shopping-list`](https://github.com/madmachinations/home-assistant-alexa-shopping-list),
+aber ohne separates Server-Add-on.
 
 ## Installation
 
@@ -20,25 +19,22 @@ Drittanbieterzugriff auf Alexa-Einkaufslisten abgeschaltet hat.
 
 4. **Alexa Sync** installieren.
 5. Add-on starten und die **Weboberflaeche** oeffnen.
-6. Sync-Modus waehlen:
-   - **Home Assistant Liste ↔ Home Assistant Liste**
-   - **Alexa Shopping List Server ↔ Home Assistant Liste**
-7. Listen bzw. Alexa-Serverdaten eintragen und speichern.
-
-Nach dem Update auf Version `0.2.1` kann die Oberflaeche auch als Sidebar-Panel
-**Alexa Sync** erscheinen.
+6. Sync-Modus **Alexa direkt - Home Assistant Liste** waehlen.
+7. Amazon-Domain, z.B. `amazon.de`, und die Ziel-Liste, z.B. Bring, auswaehlen.
+8. Amazon-Session ueber die Weboberflaeche speichern. Falls Amazon den Login
+   blockiert, koennen alternativ Session-Cookies importiert werden.
 
 Die YAML-Konfiguration bleibt optional als Fallback moeglich:
 
-   ```yaml
-   list_a: todo.alexa_einkaufsliste
-list_b: todo.einkaufsliste_2
-mode: ha_todo_pair
+```yaml
+mode: internal_alexa
+amazon_domain: amazon.de
+ha_list: todo.einkaufsliste_2
 interval_seconds: 60
 sync_completed: true
 remove_completed: false
 log_level: info
-   ```
+```
 
 ## Add-on
 

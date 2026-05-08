@@ -10,33 +10,51 @@
 
 4. **Alexa Sync** installieren.
 5. Add-on starten.
-6. Den Reiter **Weboberflaeche** oeffnen.
-7. Zwei To-do-Listen auswaehlen und speichern.
+6. Die **Weboberflaeche** oeffnen.
+7. Modus **Alexa direkt - Home Assistant Liste** waehlen.
+8. Amazon-Domain, Ziel-`todo`-Liste und Cookies eintragen.
 
-## Beispiel
+## Direkter Alexa-Modus
 
-Die YAML-Konfiguration ist optional. Sie dient nur als Start-/Fallbackwert, wenn
-noch keine Konfiguration ueber die Weboberflaeche gespeichert wurde.
+Der direkte Modus laeuft komplett in diesem Add-on. Chromium/Selenium oeffnet
+die Alexa-Einkaufsliste auf der Amazon-Webseite und nutzt importierte Amazon-
+Session-Cookies. Amazon-Benutzername und Passwort werden nicht im Add-on
+gespeichert. Die Weboberflaeche kann einen Login-Versuch ausfuehren und danach
+nur die Browser-Cookies persistieren.
+
+Beispiel:
 
 ```yaml
-mode: ha_todo_pair
-list_a: todo.alexa_einkaufsliste
-list_b: todo.einkaufsliste_2
+mode: internal_alexa
+amazon_domain: amazon.de
+ha_list: todo.einkaufsliste_2
 interval_seconds: 60
 sync_completed: true
 remove_completed: false
 log_level: info
 ```
 
-## Alexa-Server-Modus
+Falls Amazon den automatisierten Login blockiert oder weitere Pruefungen
+verlangt, koennen Cookies in der Weboberflaeche importiert werden. Erwartet wird
+eine JSON-Liste im Format, das Browser-Cookie-Export-Erweiterungen typischerweise
+liefern.
 
-Amazon stellt keine einfache To-do-Entity fuer Alexa-Einkaufslisten bereit.
-Der Workaround aus
-`madmachinations/home-assistant-alexa-shopping-list` nutzt Selenium/Chromium und
-stellt die Alexa-Liste ueber einen WebSocket-Server bereit. Dieses Add-on kann
-mit diesem Server sprechen.
+## HA-Listenmodus
 
-Beispiel:
+```yaml
+mode: ha_todo_pair
+list_a: todo.einkaufsliste_2
+list_b: todo.zuhause
+interval_seconds: 60
+sync_completed: true
+remove_completed: false
+log_level: info
+```
+
+## Externer Alexa-Server-Modus
+
+Dieser Modus bleibt als Kompatibilitaetsmodus verfuegbar, falls bereits ein
+Server aus `madmachinations/home-assistant-alexa-shopping-list` laeuft.
 
 ```yaml
 mode: alexa_server
@@ -51,7 +69,6 @@ log_level: info
 
 ## Voraussetzungen
 
-Alexa und Bring muessen bereits als Home-Assistant-`todo`-Entities vorhanden
-sein. Das Add-on spricht nicht direkt mit Amazon oder Bring, sondern nutzt die
-Home-Assistant-Services `todo.get_items`, `todo.add_item`,
-`todo.update_item` und optional `todo.remove_completed_items`.
+Die Ziel-Liste, z.B. Bring, muss als Home-Assistant-`todo`-Entity vorhanden
+sein. Der direkte Alexa-Modus spricht zusaetzlich ueber Chromium/Selenium mit
+der Amazon-Webseite.

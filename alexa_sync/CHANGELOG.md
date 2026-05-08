@@ -21,3 +21,9 @@
 - Alexa-Shopping-List-Server-Modus hinzugefuegt.
 - Weboberflaeche um Sync-Modus, Alexa-Server-Host und Alexa-Server-Port erweitert.
 - Docker-Image installiert `websockets` fuer die Kommunikation mit dem Alexa-Server.
+
+## 0.4.0
+
+- Direkten Alexa-Modus integriert: Chromium/Selenium laeuft im Add-on.
+- Weboberflaeche um Amazon-Domain, Cookie-Import und Authentifizierungspruefung erweitert.
+- Docker-Image installiert Chromium, Chromedriver und Selenium.
