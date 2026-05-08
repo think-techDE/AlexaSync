@@ -10,6 +10,11 @@ Typischer Einsatz:
 
 ## Konfiguration
 
+Die bevorzugte Konfiguration erfolgt ueber den Reiter **Weboberflaeche** des
+Add-ons. Dort werden vorhandene `todo.*`-Entities als Dropdown angezeigt.
+
+Die YAML-Optionen bleiben als Start-/Fallbackwerte erhalten.
+
 | Option | Beschreibung |
 | --- | --- |
 | `list_a` | Erste Home-Assistant-To-do-Entity, z.B. `todo.alexa_einkaufsliste`. |

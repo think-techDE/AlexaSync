@@ -13,7 +13,10 @@ Einkaufsliste.
    `https://github.com/think-techDE/AlexaSync`
 
 4. **Alexa Sync** installieren.
-5. In der Add-on-Konfiguration die beiden Listen setzen, z.B.:
+5. Add-on starten und den Reiter **Weboberflaeche** oeffnen.
+6. Die beiden Listen per Dropdown auswaehlen und speichern.
+
+Die YAML-Konfiguration bleibt optional als Fallback moeglich:
 
    ```yaml
    list_a: todo.alexa_einkaufsliste

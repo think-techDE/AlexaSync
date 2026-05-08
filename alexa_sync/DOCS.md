@@ -9,10 +9,14 @@
    `https://github.com/think-techDE/AlexaSync`
 
 4. **Alexa Sync** installieren.
-5. In der Add-on-Konfiguration `list_a` und `list_b` setzen.
-6. Add-on starten.
+5. Add-on starten.
+6. Den Reiter **Weboberflaeche** oeffnen.
+7. Zwei To-do-Listen auswaehlen und speichern.
 
 ## Beispiel
+
+Die YAML-Konfiguration ist optional. Sie dient nur als Start-/Fallbackwert, wenn
+noch keine Konfiguration ueber die Weboberflaeche gespeichert wurde.
 
 ```yaml
 list_a: todo.alexa_einkaufsliste
