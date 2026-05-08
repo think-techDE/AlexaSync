@@ -10,8 +10,9 @@ Typischer Einsatz:
 
 ## Konfiguration
 
-Die bevorzugte Konfiguration erfolgt ueber den Reiter **Weboberflaeche** des
-Add-ons. Dort werden vorhandene `todo.*`-Entities als Dropdown angezeigt.
+Die bevorzugte Konfiguration erfolgt ueber die **Weboberflaeche** des Add-ons
+oder ueber den Sidebar-Eintrag **Alexa Sync**. Dort werden vorhandene
+`todo.*`-Entities als Dropdown angezeigt.
 
 Die YAML-Optionen bleiben als Start-/Fallbackwerte erhalten.
 

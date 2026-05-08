@@ -13,8 +13,11 @@ Einkaufsliste.
    `https://github.com/think-techDE/AlexaSync`
 
 4. **Alexa Sync** installieren.
-5. Add-on starten und den Reiter **Weboberflaeche** oeffnen.
+5. Add-on starten und die **Weboberflaeche** oeffnen.
 6. Die beiden Listen per Dropdown auswaehlen und speichern.
+
+Nach dem Update auf Version `0.2.1` kann die Oberflaeche auch als Sidebar-Panel
+**Alexa Sync** erscheinen.
 
 Die YAML-Konfiguration bleibt optional als Fallback moeglich:
 
