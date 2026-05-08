@@ -19,8 +19,30 @@ Die YAML-Konfiguration ist optional. Sie dient nur als Start-/Fallbackwert, wenn
 noch keine Konfiguration ueber die Weboberflaeche gespeichert wurde.
 
 ```yaml
+mode: ha_todo_pair
 list_a: todo.alexa_einkaufsliste
 list_b: todo.einkaufsliste_2
+interval_seconds: 60
+sync_completed: true
+remove_completed: false
+log_level: info
+```
+
+## Alexa-Server-Modus
+
+Amazon stellt keine einfache To-do-Entity fuer Alexa-Einkaufslisten bereit.
+Der Workaround aus
+`madmachinations/home-assistant-alexa-shopping-list` nutzt Selenium/Chromium und
+stellt die Alexa-Liste ueber einen WebSocket-Server bereit. Dieses Add-on kann
+mit diesem Server sprechen.
+
+Beispiel:
+
+```yaml
+mode: alexa_server
+alexa_server_host: 192.168.1.10
+alexa_server_port: 4000
+ha_list: todo.einkaufsliste_2
 interval_seconds: 60
 sync_completed: true
 remove_completed: false

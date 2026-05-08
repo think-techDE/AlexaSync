@@ -15,3 +15,9 @@
 
 - Versions-Bump fuer sauberes Add-on-Update auf die Weboberflaechen-Version.
 - Sidebar-Panel fuer die Weboberflaeche aktiviert.
+
+## 0.3.0
+
+- Alexa-Shopping-List-Server-Modus hinzugefuegt.
+- Weboberflaeche um Sync-Modus, Alexa-Server-Host und Alexa-Server-Port erweitert.
+- Docker-Image installiert `websockets` fuer die Kommunikation mit dem Alexa-Server.

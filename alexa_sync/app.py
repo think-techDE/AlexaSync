@@ -16,6 +16,7 @@ import threading
 import time
 from typing import Any
 from urllib import error, request
+from websockets.sync.client import connect
 
 API_BASE = "http://supervisor/core/api"
 OPTIONS_PATH = Path("/data/options.json")
@@ -27,8 +28,12 @@ STATUS_NEEDS_ACTION = "needs_action"
 STATUS_COMPLETED = "completed"
 
 DEFAULT_SETTINGS = {
+    "mode": "ha_todo_pair",
     "list_a": "",
     "list_b": "",
+    "alexa_server_host": "",
+    "alexa_server_port": 4000,
+    "ha_list": "",
     "interval_seconds": 60,
     "sync_completed": True,
     "remove_completed": False,
@@ -73,7 +78,7 @@ class RuntimeState:
                     "configured": False,
                     "last_sync": None,
                     "last_writes": 0,
-                    "last_error": "Bitte zuerst zwei unterschiedliche Listen auswaehlen.",
+                    "last_error": "Bitte zuerst den Sync-Modus konfigurieren.",
                 }
                 return self.last_result
 
@@ -139,8 +144,12 @@ def normalize_settings(raw: dict[str, Any]) -> dict[str, Any]:
     """Normalize user settings."""
     settings = dict(DEFAULT_SETTINGS)
     settings.update(raw)
+    settings["mode"] = str(settings.get("mode", "ha_todo_pair")).strip()
     settings["list_a"] = str(settings.get("list_a", "")).strip()
     settings["list_b"] = str(settings.get("list_b", "")).strip()
+    settings["alexa_server_host"] = str(settings.get("alexa_server_host", "")).strip()
+    settings["alexa_server_port"] = int(settings.get("alexa_server_port", 4000))
+    settings["ha_list"] = str(settings.get("ha_list", "")).strip()
     settings["interval_seconds"] = max(10, min(3600, int(settings.get("interval_seconds", 60))))
     settings["sync_completed"] = bool(settings.get("sync_completed", True))
     settings["remove_completed"] = bool(settings.get("remove_completed", False))
@@ -165,6 +174,13 @@ def save_settings(settings: dict[str, Any]) -> dict[str, Any]:
 
 def validate_settings(settings: dict[str, Any]) -> None:
     """Validate settings."""
+    if settings["mode"] == "alexa_server":
+        if bool(settings["alexa_server_host"]) != bool(settings["ha_list"]):
+            raise ValueError("Bitte Alexa-Server und Home-Assistant-Liste auswaehlen.")
+        if settings["alexa_server_port"] <= 0:
+            raise ValueError("Bitte einen gueltigen Alexa-Server-Port angeben.")
+        return
+
     if bool(settings["list_a"]) != bool(settings["list_b"]):
         raise ValueError("Bitte beide Listen auswaehlen.")
     if settings["list_a"] and settings["list_a"] == settings["list_b"]:
@@ -173,6 +189,8 @@ def validate_settings(settings: dict[str, Any]) -> None:
 
 def is_configured(settings: dict[str, Any]) -> bool:
     """Return if sync lists are configured."""
+    if settings["mode"] == "alexa_server":
+        return bool(settings["alexa_server_host"] and settings["ha_list"])
     return bool(settings["list_a"] and settings["list_b"] and settings["list_a"] != settings["list_b"])
 
 
@@ -301,6 +319,44 @@ class HomeAssistantClient:
     def remove_completed_items(self, entity_id: str) -> None:
         """Remove completed items from a to-do list."""
         self.call_service("todo", "remove_completed_items", {"entity_id": entity_id})
+
+
+class AlexaServerClient:
+    """Client for madmachinations Alexa Shopping List server."""
+
+    def __init__(self, host: str, port: int) -> None:
+        """Initialize client."""
+        self.url = f"ws://{host}:{port}"
+
+    def command(self, command: str, args: dict[str, Any] | None = None) -> Any:
+        """Run one Alexa server command."""
+        payload = {"command": command, "args": args or {}}
+        with connect(self.url, open_timeout=30, close_timeout=10) as websocket:
+            websocket.send(json.dumps(payload))
+            response = json.loads(websocket.recv())
+
+        if response.get("error"):
+            raise RuntimeError(f"Alexa server command {command} failed: {response['error']}")
+        return response.get("result")
+
+    def get_items(self) -> list[TodoItem]:
+        """Return active Alexa shopping list items."""
+        result = self.command("get_list")
+        if not isinstance(result, list):
+            return []
+        return [
+            TodoItem(uid=str(item), summary=str(item), status=STATUS_NEEDS_ACTION)
+            for item in result
+            if str(item).strip()
+        ]
+
+    def add_item(self, item: TodoItem) -> None:
+        """Add an item to Alexa."""
+        self.command("add_item", {"item": item.summary})
+
+    def remove_item(self, item: TodoItem) -> None:
+        """Remove an item from Alexa."""
+        self.command("remove_item", {"item": item.summary})
 
 
 class ConfigHandler(BaseHTTPRequestHandler):
@@ -465,6 +521,9 @@ def remember(state: dict[str, Any], item_a: TodoItem | None, item_b: TodoItem | 
 
 def sync_once(client: HomeAssistantClient, settings: dict[str, Any], state: dict[str, Any]) -> int:
     """Run one synchronization pass. Returns number of write operations."""
+    if settings["mode"] == "alexa_server":
+        return sync_alexa_server_once(client, settings, state)
+
     list_a = settings["list_a"]
     list_b = settings["list_b"]
     items_a = index_items(client.get_items(list_a))
@@ -521,6 +580,65 @@ def sync_once(client: HomeAssistantClient, settings: dict[str, Any], state: dict
         client.remove_completed_items(list_a)
         client.remove_completed_items(list_b)
         writes += 2
+
+    return writes
+
+
+def sync_alexa_server_once(
+    client: HomeAssistantClient, settings: dict[str, Any], state: dict[str, Any]
+) -> int:
+    """Synchronize Alexa server active items with one Home Assistant to-do list."""
+    alexa = AlexaServerClient(settings["alexa_server_host"], settings["alexa_server_port"])
+    ha_entity = settings["ha_list"]
+    alexa_items = index_items(alexa.get_items())
+    ha_items = index_items(client.get_items(ha_entity))
+    stored_items = state.setdefault("items", {})
+    keys = set(alexa_items) | set(ha_items) | set(stored_items)
+    writes = 0
+
+    for key in sorted(keys):
+        alexa_item = alexa_items.get(key)
+        ha_item = ha_items.get(key)
+        item_state = stored_items.setdefault(key, {})
+
+        if alexa_item is None and ha_item is None:
+            stored_items.pop(key, None)
+            continue
+
+        if alexa_item is None and ha_item is not None:
+            if ha_item.status == STATUS_NEEDS_ACTION:
+                LOGGER.info("Creating '%s' in Alexa", ha_item.summary)
+                alexa.add_item(ha_item)
+                writes += 1
+            remember(item_state, alexa_item, ha_item)
+            continue
+
+        if ha_item is None and alexa_item is not None:
+            LOGGER.info("Creating '%s' in %s", alexa_item.summary, ha_entity)
+            client.add_item(ha_entity, alexa_item)
+            writes += 1
+            remember(item_state, alexa_item, ha_item)
+            continue
+
+        if (
+            alexa_item is not None
+            and ha_item is not None
+            and settings["sync_completed"]
+            and ha_item.status == STATUS_COMPLETED
+        ):
+            LOGGER.info("Removing completed '%s' from Alexa", ha_item.summary)
+            alexa.remove_item(alexa_item)
+            writes += 1
+
+        remember(item_state, alexa_item, ha_item)
+
+    state["updated_at"] = time.time()
+    save_state(state)
+
+    if settings["remove_completed"]:
+        LOGGER.info("Removing completed items from %s", ha_entity)
+        client.remove_completed_items(ha_entity)
+        writes += 1
 
     return writes
 
@@ -619,6 +737,27 @@ INDEX_HTML = r"""<!doctype html>
       margin: 0 0 24px;
       color: var(--muted);
     }
+    .mode-row {
+      display: grid;
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+    .radio {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      font-weight: 600;
+    }
+    .radio span {
+      display: block;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 400;
+      margin-top: 2px;
+    }
     form, .status {
       background: var(--panel);
       border: 1px solid var(--border);
@@ -636,7 +775,7 @@ INDEX_HTML = r"""<!doctype html>
       font-weight: 600;
       margin-bottom: 6px;
     }
-    select, input[type="number"] {
+    select, input[type="number"], input[type="text"] {
       width: 100%;
       min-height: 42px;
       border: 1px solid var(--border);
@@ -703,17 +842,39 @@ INDEX_HTML = r"""<!doctype html>
 <body>
   <main>
     <h1>Alexa Sync</h1>
-    <p>Waehle zwei Home-Assistant-To-do-Listen aus. Das Add-on synchronisiert neue Eintraege und optional den Erledigt-Status bidirektional.</p>
+    <p>Synchronisiere zwei Home-Assistant-To-do-Listen oder eine externe Alexa-Shopping-List-Server-Instanz mit einer Home-Assistant-To-do-Liste.</p>
 
     <form id="config-form">
+      <div class="mode-row">
+        <label class="radio">
+          <input type="radio" name="mode" value="ha_todo_pair">
+          <span><strong>Home Assistant Liste ↔ Home Assistant Liste</strong><br>Fuer Bring, lokale Listen oder andere vorhandene `todo.*`-Entities.</span>
+        </label>
+        <label class="radio">
+          <input type="radio" name="mode" value="alexa_server">
+          <span><strong>Alexa Shopping List Server ↔ Home Assistant Liste</strong><br>Nutzt den Selenium/WebSocket-Server aus dem madmachinations-Projekt.</span>
+        </label>
+      </div>
       <div class="grid">
-        <div>
+        <div class="ha-pair-field">
           <label for="list-a">Liste A</label>
           <select id="list-a" name="list_a"></select>
         </div>
-        <div>
+        <div class="ha-pair-field">
           <label for="list-b">Liste B</label>
           <select id="list-b" name="list_b"></select>
+        </div>
+        <div class="alexa-field">
+          <label for="alexa-host">Alexa-Server Host/IP</label>
+          <input id="alexa-host" name="alexa_server_host" type="text" placeholder="192.168.1.10">
+        </div>
+        <div class="alexa-field">
+          <label for="alexa-port">Alexa-Server Port</label>
+          <input id="alexa-port" name="alexa_server_port" type="number" min="1" max="65535" step="1">
+        </div>
+        <div class="alexa-field">
+          <label for="ha-list">Home-Assistant-Liste</label>
+          <select id="ha-list" name="ha_list"></select>
         </div>
         <div>
           <label for="interval">Sync-Intervall in Sekunden</label>
@@ -744,10 +905,14 @@ INDEX_HTML = r"""<!doctype html>
   <script>
     const listA = document.getElementById("list-a");
     const listB = document.getElementById("list-b");
+    const haList = document.getElementById("ha-list");
+    const alexaHost = document.getElementById("alexa-host");
+    const alexaPort = document.getElementById("alexa-port");
     const interval = document.getElementById("interval");
     const syncCompleted = document.getElementById("sync-completed");
     const removeCompleted = document.getElementById("remove-completed");
     const message = document.getElementById("message");
+    const modeInputs = [...document.querySelectorAll('input[name="mode"]')];
 
     function setMessage(text, type = "") {
       message.textContent = text;
@@ -776,15 +941,35 @@ INDEX_HTML = r"""<!doctype html>
       document.getElementById("status-error").textContent = status.last_error || "-";
     }
 
+    function selectedMode() {
+      return document.querySelector('input[name="mode"]:checked')?.value || "ha_todo_pair";
+    }
+
+    function applyModeVisibility() {
+      const mode = selectedMode();
+      document.querySelectorAll(".ha-pair-field").forEach((el) => {
+        el.style.display = mode === "ha_todo_pair" ? "" : "none";
+      });
+      document.querySelectorAll(".alexa-field").forEach((el) => {
+        el.style.display = mode === "alexa_server" ? "" : "none";
+      });
+    }
+
     async function loadConfig() {
       const res = await fetch("api/config");
       const data = await res.json();
       const settings = data.settings;
+      const mode = settings.mode || "ha_todo_pair";
+      document.querySelector(`input[name="mode"][value="${mode}"]`).checked = true;
       fillSelect(listA, data.todo_entities, settings.list_a);
       fillSelect(listB, data.todo_entities, settings.list_b);
+      fillSelect(haList, data.todo_entities, settings.ha_list);
+      alexaHost.value = settings.alexa_server_host || "";
+      alexaPort.value = settings.alexa_server_port || 4000;
       interval.value = settings.interval_seconds;
       syncCompleted.checked = settings.sync_completed;
       removeCompleted.checked = settings.remove_completed;
+      applyModeVisibility();
       renderStatus(data.status);
       if (data.entity_error) setMessage(data.entity_error, "error");
     }
@@ -792,8 +977,12 @@ INDEX_HTML = r"""<!doctype html>
     document.getElementById("config-form").addEventListener("submit", async (event) => {
       event.preventDefault();
       const payload = {
+        mode: selectedMode(),
         list_a: listA.value,
         list_b: listB.value,
+        alexa_server_host: alexaHost.value,
+        alexa_server_port: Number(alexaPort.value),
+        ha_list: haList.value,
         interval_seconds: Number(interval.value),
         sync_completed: syncCompleted.checked,
         remove_completed: removeCompleted.checked
@@ -819,6 +1008,8 @@ INDEX_HTML = r"""<!doctype html>
       renderStatus(data.result);
       setMessage(data.ok ? "Sync abgeschlossen." : data.result.last_error, data.ok ? "ok" : "error");
     });
+
+    modeInputs.forEach((input) => input.addEventListener("change", applyModeVisibility));
 
     loadConfig().catch((err) => setMessage(err.message, "error"));
   </script>

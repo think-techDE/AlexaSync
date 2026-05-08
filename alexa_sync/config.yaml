@@ -1,5 +1,5 @@
 name: Alexa Sync
-version: "0.2.1"
+version: "0.3.0"
 slug: alexa_sync
 description: Bidirectional synchronization between two Home Assistant to-do lists.
 url: https://github.com/think-techDE/AlexaSync
@@ -20,6 +20,10 @@ panel_icon: mdi:cart-sync
 options:
   list_a: ""
   list_b: ""
+  mode: ha_todo_pair
+  alexa_server_host: ""
+  alexa_server_port: 4000
+  ha_list: ""
   interval_seconds: 60
   sync_completed: true
   remove_completed: false
@@ -27,6 +31,10 @@ options:
 schema:
   list_a: str?
   list_b: str?
+  mode: list(ha_todo_pair|alexa_server)
+  alexa_server_host: str?
+  alexa_server_port: port
+  ha_list: str?
   interval_seconds: int(10,3600)
   sync_completed: bool
   remove_completed: bool
