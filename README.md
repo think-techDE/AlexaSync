@@ -3,7 +3,7 @@
 Home-Assistant-Add-on-Repository fuer die Synchronisation der Alexa-
 Einkaufsliste mit einer Home-Assistant-`todo`-Liste, zum Beispiel Bring.
 
-Seit Version `0.4.0` bringt das Add-on den Alexa-Workaround direkt mit:
+Seit Version `0.5.0` bringt das Add-on den Alexa-Workaround direkt mit:
 Chromium/Selenium laeuft im Add-on und liest die Alexa-Einkaufsliste mit
 importierten Amazon-Session-Cookies. Das basiert auf dem technischen Ansatz von
 [`madmachinations/home-assistant-alexa-shopping-list`](https://github.com/madmachinations/home-assistant-alexa-shopping-list),
@@ -20,7 +20,7 @@ aber ohne separates Server-Add-on.
 4. **Alexa Sync** installieren.
 5. Add-on starten und die **Weboberflaeche** oeffnen.
 6. Sync-Modus **Alexa direkt - Home Assistant Liste** waehlen.
-7. Amazon-Domain, z.B. `amazon.de`, und die Ziel-Liste, z.B. Bring, auswaehlen.
+7. Amazon-Domain, z.B. `amazon.de`, und die Bring-/Ziel-Liste auswaehlen.
 8. Amazon-Session ueber die Weboberflaeche speichern. Falls Amazon den Login
    blockiert, koennen alternativ Session-Cookies importiert werden.
 
@@ -30,7 +30,7 @@ Die YAML-Konfiguration bleibt optional als Fallback moeglich:
 mode: internal_alexa
 amazon_domain: amazon.de
 ha_list: todo.einkaufsliste_2
-interval_seconds: 60
+interval_seconds: 120
 sync_completed: true
 remove_completed: false
 log_level: info

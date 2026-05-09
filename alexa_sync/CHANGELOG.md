@@ -27,3 +27,12 @@
 - Direkten Alexa-Modus integriert: Chromium/Selenium laeuft im Add-on.
 - Weboberflaeche um Amazon-Domain, Cookie-Import und Authentifizierungspruefung erweitert.
 - Docker-Image installiert Chromium, Chromedriver und Selenium.
+
+## 0.5.0
+
+- Standardoberflaeche auf Alexa-zu-Bring-Sync vereinfacht.
+- Erweiterte Modi eingeklappt, damit der Hauptpfad klar bleibt.
+- Alpine-Edge-Repositories entfernt und Build auf die Home-Assistant-Base-Repositories zurueckgefuehrt.
+- Unterstuetzte Architekturen auf `amd64` und `aarch64` begrenzt, weil Chromium dort am stabilsten verfuegbar ist.
+- Amazon-Cookies werden mit restriktiven Dateirechten gespeichert.
+- Wenn ein bereits synchronisierter Alexa-Eintrag dort verschwindet, wird der HA-Eintrag als erledigt markiert statt erneut nach Alexa geschrieben.

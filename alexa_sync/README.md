@@ -12,8 +12,8 @@ Typischer Einsatz:
 ## Konfiguration
 
 Die bevorzugte Konfiguration erfolgt ueber die **Weboberflaeche** des Add-ons
-oder ueber den Sidebar-Eintrag **Alexa Sync**. Dort werden vorhandene
-`todo.*`-Entities als Dropdown angezeigt.
+oder ueber den Sidebar-Eintrag **Alexa Sync**. Fuer den Standardfall muss nur
+die Bring-/Ziel-Liste gewaehlt und eine Amazon-Session gespeichert werden.
 
 Modi:
 
@@ -46,6 +46,6 @@ Die YAML-Optionen bleiben als Start-/Fallbackwerte erhalten.
 Amazon stellt keine offizielle stabile API fuer Alexa-Einkaufslisten bereit. Das
 Add-on speichert deshalb keine Amazon-Zugangsdaten. Die Weboberflaeche kann
 einmalig einen Login-Versuch ausfuehren und speichert danach nur die Browser-
-Session-Cookies. Wenn Amazon die Session beendet oder den automatisierten Login
-blockiert, muessen die Cookies erneut importiert oder die Session erneut
-gespeichert werden.
+Session-Cookies mit restriktiven Dateirechten. Wenn Amazon die Session beendet
+oder den automatisierten Login blockiert, muessen die Cookies erneut importiert
+oder die Session erneut gespeichert werden.

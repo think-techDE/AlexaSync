@@ -1,14 +1,11 @@
 name: Alexa Sync
-version: "0.4.0"
+version: "0.5.0"
 slug: alexa_sync
-description: Bidirectional synchronization between two Home Assistant to-do lists.
+description: Synchronize the Alexa shopping list with a Home Assistant to-do list.
 url: https://github.com/think-techDE/AlexaSync
 arch:
   - aarch64
   - amd64
-  - armhf
-  - armv7
-  - i386
 startup: application
 boot: auto
 init: false
@@ -25,7 +22,7 @@ options:
   alexa_server_host: ""
   alexa_server_port: 4000
   ha_list: ""
-  interval_seconds: 60
+  interval_seconds: 120
   sync_completed: true
   remove_completed: false
   log_level: info
@@ -37,7 +34,7 @@ schema:
   alexa_server_host: str?
   alexa_server_port: port
   ha_list: str?
-  interval_seconds: int(10,3600)
+  interval_seconds: int(30,3600)
   sync_completed: bool
   remove_completed: bool
   log_level: list(trace|debug|info|warning|error)

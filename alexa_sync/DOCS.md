@@ -12,7 +12,8 @@
 5. Add-on starten.
 6. Die **Weboberflaeche** oeffnen.
 7. Modus **Alexa direkt - Home Assistant Liste** waehlen.
-8. Amazon-Domain, Ziel-`todo`-Liste und Cookies eintragen.
+8. Amazon-Domain und Bring-/Ziel-Liste auswaehlen.
+9. Amazon-Session speichern oder Cookies importieren.
 
 ## Direkter Alexa-Modus
 
@@ -28,7 +29,7 @@ Beispiel:
 mode: internal_alexa
 amazon_domain: amazon.de
 ha_list: todo.einkaufsliste_2
-interval_seconds: 60
+interval_seconds: 120
 sync_completed: true
 remove_completed: false
 log_level: info
@@ -45,7 +46,7 @@ liefern.
 mode: ha_todo_pair
 list_a: todo.einkaufsliste_2
 list_b: todo.zuhause
-interval_seconds: 60
+interval_seconds: 120
 sync_completed: true
 remove_completed: false
 log_level: info
@@ -61,7 +62,7 @@ mode: alexa_server
 alexa_server_host: 192.168.1.10
 alexa_server_port: 4000
 ha_list: todo.einkaufsliste_2
-interval_seconds: 60
+interval_seconds: 120
 sync_completed: true
 remove_completed: false
 log_level: info
@@ -72,3 +73,5 @@ log_level: info
 Die Ziel-Liste, z.B. Bring, muss als Home-Assistant-`todo`-Entity vorhanden
 sein. Der direkte Alexa-Modus spricht zusaetzlich ueber Chromium/Selenium mit
 der Amazon-Webseite.
+
+Unterstuetzte Architekturen: `amd64` und `aarch64`.

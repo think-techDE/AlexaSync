@@ -36,7 +36,7 @@ DEFAULT_SETTINGS = {
     "alexa_server_host": "",
     "alexa_server_port": 4000,
     "ha_list": "",
-    "interval_seconds": 60,
+    "interval_seconds": 120,
     "sync_completed": True,
     "remove_completed": False,
     "log_level": "info",
@@ -122,8 +122,12 @@ def read_json_file(path: Path, fallback: dict[str, Any]) -> dict[str, Any]:
     """Read a JSON file or return fallback."""
     if not path.exists():
         return dict(fallback)
-    with path.open("r", encoding="utf-8") as file:
-        data = json.load(file)
+    try:
+        with path.open("r", encoding="utf-8") as file:
+            data = json.load(file)
+    except (OSError, json.JSONDecodeError):
+        LOGGER.warning("Ignoring invalid JSON file %s", path)
+        return dict(fallback)
     if not isinstance(data, dict):
         return dict(fallback)
     return data
@@ -132,9 +136,32 @@ def read_json_file(path: Path, fallback: dict[str, Any]) -> dict[str, Any]:
 def write_json_file(path: Path, data: dict[str, Any]) -> None:
     """Write JSON atomically."""
     tmp_path = path.with_suffix(".tmp")
+    path.parent.mkdir(parents=True, exist_ok=True)
     with tmp_path.open("w", encoding="utf-8") as file:
         json.dump(data, file, ensure_ascii=True, indent=2, sort_keys=True)
     tmp_path.replace(path)
+
+
+def save_cookie_list(cookies: list[dict[str, Any]]) -> None:
+    """Persist Amazon cookies with owner-only permissions where supported."""
+    ALEXA_COOKIES_PATH.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = ALEXA_COOKIES_PATH.with_suffix(".tmp")
+    with tmp_path.open("w", encoding="utf-8") as cookie_file:
+        json.dump(cookies, cookie_file, ensure_ascii=True, indent=2)
+    tmp_path.replace(ALEXA_COOKIES_PATH)
+    try:
+        ALEXA_COOKIES_PATH.chmod(0o600)
+    except OSError:
+        LOGGER.debug("Could not chmod cookie file", exc_info=True)
+
+
+def parse_int(value: Any, default: int, minimum: int, maximum: int) -> int:
+    """Parse bounded integer settings."""
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(minimum, min(maximum, parsed))
 
 
 def load_options() -> dict[str, Any]:
@@ -151,9 +178,9 @@ def normalize_settings(raw: dict[str, Any]) -> dict[str, Any]:
     settings["list_a"] = str(settings.get("list_a", "")).strip()
     settings["list_b"] = str(settings.get("list_b", "")).strip()
     settings["alexa_server_host"] = str(settings.get("alexa_server_host", "")).strip()
-    settings["alexa_server_port"] = int(settings.get("alexa_server_port", 4000))
+    settings["alexa_server_port"] = parse_int(settings.get("alexa_server_port"), 4000, 1, 65535)
     settings["ha_list"] = str(settings.get("ha_list", "")).strip()
-    settings["interval_seconds"] = max(10, min(3600, int(settings.get("interval_seconds", 60))))
+    settings["interval_seconds"] = parse_int(settings.get("interval_seconds"), 120, 30, 3600)
     settings["sync_completed"] = bool(settings.get("sync_completed", True))
     settings["remove_completed"] = bool(settings.get("remove_completed", False))
     settings["log_level"] = str(settings.get("log_level", "info")).lower()
@@ -436,14 +463,20 @@ class InternalAlexaClient:
         self.driver.refresh()
         time.sleep(2)
 
+    def _shopping_list_url(self) -> str:
+        """Return the Alexa shopping list URL for the configured marketplace."""
+        return f"https://www.{self.amazon_domain}/alexaquantum/sp/alexaShoppingList?ref=nav_asl"
+
     def is_authenticated(self) -> bool:
         """Return if imported cookies still authenticate with Amazon."""
         if self.driver is None:
             raise RuntimeError("Browser is not running")
         self._load_cookies()
-        current_url = str(self.driver.current_url)
+        self.driver.get(self._shopping_list_url())
+        time.sleep(3)
+        current_url = str(self.driver.current_url).lower()
         page = self.driver.page_source.lower()
-        return "ap/signin" not in current_url and "nav-link-accountlist" in page
+        return "ap/signin" not in current_url and "virtual-list" in page
 
     def login(self, email: str, password: str, otp: str = "") -> bool:
         """Try Amazon login and persist browser cookies."""
@@ -474,14 +507,13 @@ class InternalAlexaClient:
             self.driver.find_element(By.ID, "auth-signin-button").click()
             time.sleep(2)
 
-        self.driver.get(f"https://www.{self.amazon_domain}")
-        time.sleep(2)
-        authenticated = "ap/signin" not in str(self.driver.current_url) and (
-            "nav-link-accountlist" in self.driver.page_source.lower()
+        self.driver.get(self._shopping_list_url())
+        time.sleep(3)
+        authenticated = "ap/signin" not in str(self.driver.current_url).lower() and (
+            "virtual-list" in self.driver.page_source.lower()
         )
         if authenticated:
-            with ALEXA_COOKIES_PATH.open("w", encoding="utf-8") as cookie_file:
-                json.dump(self.driver.get_cookies(), cookie_file, ensure_ascii=True, indent=2)
+            save_cookie_list(self.driver.get_cookies())
         return authenticated
 
     def _open_list(self) -> None:
@@ -493,7 +525,7 @@ class InternalAlexaClient:
         if self.driver is None:
             raise RuntimeError("Browser is not running")
         self._load_cookies()
-        self.driver.get(f"https://www.{self.amazon_domain}/alexaquantum/sp/alexaShoppingList?ref=nav_asl")
+        self.driver.get(self._shopping_list_url())
         WebDriverWait(self.driver, 30).until(ec.presence_of_element_located((By.CLASS_NAME, "virtual-list")))
         time.sleep(3)
 
@@ -620,8 +652,7 @@ class ConfigHandler(BaseHTTPRequestHandler):
                     cookies = json.loads(cookies)
                 if not isinstance(cookies, list):
                     raise ValueError("Cookies muessen als JSON-Liste uebergeben werden.")
-                with ALEXA_COOKIES_PATH.open("w", encoding="utf-8") as cookie_file:
-                    json.dump(cookies, cookie_file, ensure_ascii=True, indent=2)
+                save_cookie_list(cookies)
                 self.send_json({"ok": True})
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
@@ -661,6 +692,7 @@ class ConfigHandler(BaseHTTPRequestHandler):
         return {
             "settings": load_settings(),
             "todo_entities": entities,
+            "suggested_ha_list": suggest_todo_entity(entities),
             "status": self.runtime.last_result,
             "alexa_cookies_present": ALEXA_COOKIES_PATH.exists(),
             "entity_error": entity_error,
@@ -733,6 +765,16 @@ def extract_items(response: Any, entity_id: str) -> list[dict[str, Any]]:
         return response["items"]
 
     return []
+
+
+def suggest_todo_entity(entities: list[dict[str, str]]) -> str:
+    """Suggest the most likely shopping list entity."""
+    candidates = ("bring", "einkauf", "shopping")
+    for entity in entities:
+        haystack = f"{entity.get('name', '')} {entity.get('entity_id', '')}".casefold()
+        if any(candidate in haystack for candidate in candidates):
+            return entity["entity_id"]
+    return entities[0]["entity_id"] if entities else ""
 
 
 def normalize_summary(summary: str) -> str:
@@ -917,6 +959,22 @@ def sync_alexa_items_with_ha(
             continue
 
         if alexa_item is None and ha_item is not None:
+            if (
+                item_state.get("a_uid")
+                and item_state.get("b_status") == STATUS_NEEDS_ACTION
+                and ha_item.status == STATUS_NEEDS_ACTION
+            ):
+                LOGGER.info(
+                    "Marking '%s' in %s as completed because it disappeared from %s",
+                    ha_item.summary,
+                    ha_entity,
+                    alexa_label,
+                )
+                client.update_status(ha_entity, ha_item.uid, STATUS_COMPLETED)
+                ha_item.status = STATUS_COMPLETED
+                writes += 1
+                remember(item_state, alexa_item, ha_item)
+                continue
             if ha_item.status == STATUS_NEEDS_ACTION:
                 LOGGER.info("Creating '%s' in %s", ha_item.summary, alexa_label)
                 alexa.add_item(ha_item)
@@ -980,11 +1038,7 @@ def main() -> int:
     while not STOP_REQUESTED:
         settings = load_settings()
         if is_configured(settings):
-            LOGGER.debug(
-                "Running sync between %s and %s",
-                settings["list_a"],
-                settings["list_b"],
-            )
+            LOGGER.debug("Running sync in %s mode", settings["mode"])
             runtime.sync()
         else:
             LOGGER.info("Waiting for configuration in the add-on web UI")
@@ -1052,6 +1106,15 @@ INDEX_HTML = r"""<!doctype html>
       display: grid;
       gap: 10px;
       margin-bottom: 18px;
+    }
+    details {
+      margin: 14px 0 18px;
+    }
+    summary {
+      color: var(--accent);
+      cursor: pointer;
+      font-weight: 650;
+      width: fit-content;
     }
     .radio {
       display: flex;
@@ -1157,30 +1220,35 @@ INDEX_HTML = r"""<!doctype html>
 <body>
   <main>
     <h1>Alexa Sync</h1>
-    <p>Synchronisiere deine Alexa-Einkaufsliste direkt mit einer Home-Assistant-To-do-Liste oder nutze vorhandene HA-Listen als Quelle und Ziel.</p>
+    <p>Alexa per Sprache befuellen, in Bring abhaken. Waehle nur deine Bring-Liste und speichere eine Amazon-Session.</p>
 
     <form id="config-form">
       <div class="mode-row">
         <label class="radio">
           <input type="radio" name="mode" value="internal_alexa">
-          <span><strong>Alexa direkt - Home Assistant Liste</strong><br>Ein Add-on: Chromium/Selenium liest die Alexa-Liste mit importierten Amazon-Session-Cookies.</span>
-        </label>
-        <label class="radio">
-          <input type="radio" name="mode" value="ha_todo_pair">
-          <span><strong>Home Assistant Liste - Home Assistant Liste</strong><br>Fuer Bring, lokale Listen oder andere vorhandene `todo.*`-Entities.</span>
-        </label>
-        <label class="radio">
-          <input type="radio" name="mode" value="alexa_server">
-          <span><strong>Externer Alexa Shopping List Server - Home Assistant Liste</strong><br>Kompatibilitaetsmodus fuer den Selenium/WebSocket-Server aus dem madmachinations-Projekt.</span>
+          <span><strong>Alexa direkt mit Bring synchronisieren</strong><br>Empfohlen. Ein Add-on, keine zweite Server-Komponente.</span>
         </label>
       </div>
+      <details>
+        <summary>Erweiterte Modi</summary>
+        <div class="mode-row">
+          <label class="radio">
+            <input type="radio" name="mode" value="ha_todo_pair">
+            <span><strong>Home Assistant Liste - Home Assistant Liste</strong><br>Fuer Bring, lokale Listen oder andere vorhandene `todo.*`-Entities.</span>
+          </label>
+          <label class="radio">
+            <input type="radio" name="mode" value="alexa_server">
+            <span><strong>Externer Alexa Shopping List Server - Home Assistant Liste</strong><br>Kompatibilitaetsmodus fuer bestehende Installationen.</span>
+          </label>
+        </div>
+      </details>
       <div class="grid">
         <div class="internal-alexa-field">
           <label for="amazon-domain">Amazon-Domain</label>
           <input id="amazon-domain" name="amazon_domain" type="text" placeholder="amazon.de">
         </div>
         <div class="internal-alexa-field">
-          <label for="internal-ha-list">Home-Assistant-Liste</label>
+          <label for="internal-ha-list">Bring-/Ziel-Liste</label>
           <select id="internal-ha-list" name="internal_ha_list"></select>
         </div>
         <div class="ha-pair-field">
@@ -1229,7 +1297,7 @@ INDEX_HTML = r"""<!doctype html>
         </div>
       </div>
       <div class="internal-alexa-field">
-        <label for="cookies">Alternativ: Amazon-Session-Cookies als JSON</label>
+        <label for="cookies">Fallback: Amazon-Session-Cookies als JSON</label>
         <textarea id="cookies" placeholder='[{"name":"session-id","value":"...","domain":".amazon.de"}]'></textarea>
         <div class="actions">
           <button id="save-cookies" type="button">Cookies importieren</button>
@@ -1323,11 +1391,12 @@ INDEX_HTML = r"""<!doctype html>
       const data = await res.json();
       const settings = data.settings;
       const mode = settings.mode || "internal_alexa";
+      const suggestedList = data.suggested_ha_list || "";
       document.querySelector(`input[name="mode"][value="${mode}"]`).checked = true;
       fillSelect(listA, data.todo_entities, settings.list_a);
       fillSelect(listB, data.todo_entities, settings.list_b);
       fillSelect(haList, data.todo_entities, settings.ha_list);
-      fillSelect(internalHaList, data.todo_entities, settings.ha_list);
+      fillSelect(internalHaList, data.todo_entities, settings.ha_list || suggestedList);
       amazonDomain.value = settings.amazon_domain || "amazon.de";
       alexaHost.value = settings.alexa_server_host || "";
       alexaPort.value = settings.alexa_server_port || 4000;
