@@ -70,6 +70,7 @@ class RuntimeState:
             "last_writes": 0,
             "last_error": None,
         }
+        self.setup_browser: InternalAlexaClient | None = None
 
     def sync(self) -> dict[str, Any]:
         """Run one synchronized pass with locking."""
@@ -101,6 +102,85 @@ class RuntimeState:
                     "last_error": str(exc),
                 }
             return self.last_result
+
+    def start_setup_browser(self, amazon_domain: str) -> dict[str, Any]:
+        """Start an interactive Amazon login browser."""
+        with self.lock:
+            self.close_setup_browser()
+            browser = InternalAlexaClient(amazon_domain)
+            browser.__enter__()
+            if browser.driver is None:
+                raise RuntimeError("Browser konnte nicht gestartet werden.")
+            browser.driver.get(f"https://www.{amazon_domain}/ap/signin")
+            self.setup_browser = browser
+            return self.get_setup_screenshot()
+
+    def close_setup_browser(self) -> None:
+        """Close interactive setup browser if present."""
+        if self.setup_browser is not None:
+            self.setup_browser.__exit__(None, None, None)
+            self.setup_browser = None
+
+    def get_setup_screenshot(self) -> dict[str, Any]:
+        """Return setup browser screenshot."""
+        if self.setup_browser is None or self.setup_browser.driver is None:
+            raise RuntimeError("Setup-Browser ist nicht gestartet.")
+        driver = self.setup_browser.driver
+        size = driver.get_window_size()
+        return {
+            "image": driver.get_screenshot_as_base64(),
+            "width": int(size.get("width", 1366)),
+            "height": int(size.get("height", 768)),
+            "url": str(driver.current_url),
+        }
+
+    def click_setup_browser(self, x: int, y: int) -> dict[str, Any]:
+        """Click in setup browser viewport."""
+        if self.setup_browser is None or self.setup_browser.driver is None:
+            raise RuntimeError("Setup-Browser ist nicht gestartet.")
+        driver = self.setup_browser.driver
+        driver.execute_cdp_cmd(
+            "Input.dispatchMouseEvent",
+            {"type": "mousePressed", "x": x, "y": y, "button": "left", "clickCount": 1},
+        )
+        driver.execute_cdp_cmd(
+            "Input.dispatchMouseEvent",
+            {"type": "mouseReleased", "x": x, "y": y, "button": "left", "clickCount": 1},
+        )
+        time.sleep(0.2)
+        return self.get_setup_screenshot()
+
+    def type_setup_browser(self, text: str) -> dict[str, Any]:
+        """Type text into focused setup browser element."""
+        if self.setup_browser is None or self.setup_browser.driver is None:
+            raise RuntimeError("Setup-Browser ist nicht gestartet.")
+        self.setup_browser.driver.switch_to.active_element.send_keys(text)
+        time.sleep(0.1)
+        return self.get_setup_screenshot()
+
+    def key_setup_browser(self, key: str) -> dict[str, Any]:
+        """Send a special key to setup browser."""
+        from selenium.webdriver.common.keys import Keys
+
+        key_map = {
+            "Backspace": Keys.BACKSPACE,
+            "Enter": Keys.ENTER,
+            "Escape": Keys.ESCAPE,
+            "Tab": Keys.TAB,
+        }
+        if key not in key_map:
+            raise ValueError("Nicht unterstuetzte Taste.")
+        return self.type_setup_browser(key_map[key])
+
+    def save_setup_cookies(self) -> dict[str, Any]:
+        """Persist cookies from setup browser."""
+        if self.setup_browser is None or self.setup_browser.driver is None:
+            raise RuntimeError("Setup-Browser ist nicht gestartet.")
+        cookies = self.setup_browser.driver.get_cookies()
+        if not cookies:
+            raise RuntimeError("Keine Cookies im Setup-Browser gefunden.")
+        save_cookie_list(cookies)
+        return {"saved": True, "cookie_count": len(cookies)}
 
 
 def handle_stop(_signum: int, _frame: Any) -> None:
@@ -478,44 +558,6 @@ class InternalAlexaClient:
         page = self.driver.page_source.lower()
         return "ap/signin" not in current_url and "virtual-list" in page
 
-    def login(self, email: str, password: str, otp: str = "") -> bool:
-        """Try Amazon login and persist browser cookies."""
-        from selenium.webdriver.common.by import By
-        from selenium.webdriver.support import expected_conditions as ec
-        from selenium.webdriver.support.ui import WebDriverWait
-
-        if self.driver is None:
-            raise RuntimeError("Browser is not running")
-
-        wait = WebDriverWait(self.driver, 30)
-        self.driver.get(f"https://www.{self.amazon_domain}/ap/signin")
-        email_input = wait.until(ec.presence_of_element_located((By.ID, "ap_email")))
-        email_input.clear()
-        email_input.send_keys(email)
-        self.driver.find_element(By.ID, "continue").click()
-
-        password_input = wait.until(ec.presence_of_element_located((By.ID, "ap_password")))
-        password_input.clear()
-        password_input.send_keys(password)
-        self.driver.find_element(By.ID, "signInSubmit").click()
-        time.sleep(2)
-
-        otp_inputs = self.driver.find_elements(By.ID, "auth-mfa-otpcode")
-        if otp_inputs and otp:
-            otp_inputs[0].clear()
-            otp_inputs[0].send_keys(otp)
-            self.driver.find_element(By.ID, "auth-signin-button").click()
-            time.sleep(2)
-
-        self.driver.get(self._shopping_list_url())
-        time.sleep(3)
-        authenticated = "ap/signin" not in str(self.driver.current_url).lower() and (
-            "virtual-list" in self.driver.page_source.lower()
-        )
-        if authenticated:
-            save_cookie_list(self.driver.get_cookies())
-        return authenticated
-
     def _open_list(self) -> None:
         """Open Alexa shopping list page."""
         from selenium.webdriver.common.by import By
@@ -657,25 +699,52 @@ class ConfigHandler(BaseHTTPRequestHandler):
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
-        if self.path == "/api/alexa/login":
+        if self.path == "/api/setup/start":
+            try:
+                settings = load_settings()
+                screenshot = self.runtime.start_setup_browser(settings["amazon_domain"])
+                self.send_json({"ok": True, "screenshot": screenshot})
+            except Exception as exc:
+                LOGGER.exception("Setup browser start failed")
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if self.path == "/api/setup/click":
             try:
                 payload = self.read_json()
-                settings = load_settings()
-                email = str(payload.get("email", "")).strip()
-                password = str(payload.get("password", ""))
-                otp = str(payload.get("otp", "")).strip()
-                if not email or not password:
-                    raise ValueError("Bitte Amazon-E-Mail und Passwort angeben.")
-                with InternalAlexaClient(settings["amazon_domain"]) as alexa:
-                    authenticated = alexa.login(email, password, otp)
-                self.send_json({
-                    "ok": authenticated,
-                    "authenticated": authenticated,
-                    "message": "Amazon-Session gespeichert." if authenticated else "Amazon-Login benoetigt weitere Bestaetigung oder wurde abgelehnt.",
-                })
+                screenshot = self.runtime.click_setup_browser(int(payload["x"]), int(payload["y"]))
+                self.send_json({"ok": True, "screenshot": screenshot})
             except Exception as exc:
-                LOGGER.exception("Alexa login failed")
-                self.send_json({"ok": False, "authenticated": False, "message": str(exc)}, HTTPStatus.BAD_REQUEST)
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if self.path == "/api/setup/type":
+            try:
+                payload = self.read_json()
+                screenshot = self.runtime.type_setup_browser(str(payload.get("text", "")))
+                self.send_json({"ok": True, "screenshot": screenshot})
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if self.path == "/api/setup/key":
+            try:
+                payload = self.read_json()
+                screenshot = self.runtime.key_setup_browser(str(payload.get("key", "")))
+                self.send_json({"ok": True, "screenshot": screenshot})
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if self.path == "/api/setup/save":
+            try:
+                result = self.runtime.save_setup_cookies()
+                self.send_json({"ok": True, "result": result})
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if self.path == "/api/setup/stop":
+            try:
+                self.runtime.close_setup_browser()
+                self.send_json({"ok": True})
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
         self.send_error(HTTPStatus.NOT_FOUND)
 
@@ -1047,6 +1116,7 @@ def main() -> int:
         while not STOP_REQUESTED and time.monotonic() < sleep_until:
             time.sleep(min(1, sleep_until - time.monotonic()))
 
+    runtime.close_setup_browser()
     server.shutdown()
     LOGGER.info("Stopping Alexa Sync")
     return 0
@@ -1163,6 +1233,26 @@ INDEX_HTML = r"""<!doctype html>
       min-height: 120px;
       resize: vertical;
     }
+    .setup-browser {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-top: 14px;
+      overflow: hidden;
+      background: #000;
+      display: none;
+    }
+    .setup-browser img {
+      display: block;
+      width: 100%;
+      height: auto;
+      cursor: crosshair;
+      user-select: none;
+    }
+    .setup-hint {
+      color: var(--muted);
+      margin: 10px 0 0;
+      font-size: 13px;
+    }
     .checks {
       display: grid;
       gap: 10px;
@@ -1277,23 +1367,16 @@ INDEX_HTML = r"""<!doctype html>
         </div>
       </div>
       <div class="internal-alexa-field">
-        <div class="grid">
-          <div>
-            <label for="amazon-email">Amazon-E-Mail</label>
-            <input id="amazon-email" type="text" autocomplete="username">
-          </div>
-          <div>
-            <label for="amazon-password">Amazon-Passwort</label>
-            <input id="amazon-password" type="password" autocomplete="current-password">
-          </div>
-          <div>
-            <label for="amazon-otp">Einmalcode optional</label>
-            <input id="amazon-otp" type="text" inputmode="numeric" autocomplete="one-time-code">
-          </div>
-        </div>
+        <label>Amazon-Session</label>
         <div class="actions">
-          <button id="amazon-login" type="button">Amazon-Session speichern</button>
+          <button id="setup-start" type="button">Amazon-Anmeldung oeffnen</button>
+          <button id="setup-save" type="button">Session uebernehmen</button>
+          <button id="setup-stop" type="button">Browser schliessen</button>
           <button id="check-alexa" type="button">Amazon-Session pruefen</button>
+        </div>
+        <p class="setup-hint">Nach dem Oeffnen in die Browseransicht klicken und normal tippen. Enter, Tab und Backspace werden uebertragen. Danach Session uebernehmen.</p>
+        <div id="setup-browser" class="setup-browser">
+          <img id="setup-screenshot" alt="Amazon Login Browser">
         </div>
       </div>
       <div class="internal-alexa-field">
@@ -1337,10 +1420,11 @@ INDEX_HTML = r"""<!doctype html>
     const removeCompleted = document.getElementById("remove-completed");
     const message = document.getElementById("message");
     const cookies = document.getElementById("cookies");
-    const amazonEmail = document.getElementById("amazon-email");
-    const amazonPassword = document.getElementById("amazon-password");
-    const amazonOtp = document.getElementById("amazon-otp");
+    const setupBrowser = document.getElementById("setup-browser");
+    const setupScreenshot = document.getElementById("setup-screenshot");
     const modeInputs = [...document.querySelectorAll('input[name="mode"]')];
+    let setupFocused = false;
+    let setupSize = {width: 1366, height: 768};
 
     function setMessage(text, type = "") {
       message.textContent = text;
@@ -1454,21 +1538,75 @@ INDEX_HTML = r"""<!doctype html>
       setMessage(data.ok ? "Cookies importiert." : data.error, data.ok ? "ok" : "error");
     });
 
-    document.getElementById("amazon-login").addEventListener("click", async () => {
-      setMessage("Melde bei Amazon an...");
-      const res = await fetch("api/alexa/login", {
+    function renderSetupScreenshot(payload) {
+      setupSize = {width: payload.width || 1366, height: payload.height || 768};
+      setupScreenshot.src = `data:image/png;base64,${payload.image}`;
+      setupBrowser.style.display = "block";
+    }
+
+    async function setupAction(path, body = {}) {
+      const res = await fetch(path, {
         method: "POST",
         headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({
-          email: amazonEmail.value,
-          password: amazonPassword.value,
-          otp: amazonOtp.value
-        })
+        body: JSON.stringify(body)
       });
       const data = await res.json();
-      amazonPassword.value = "";
-      amazonOtp.value = "";
-      setMessage(data.message, data.authenticated ? "ok" : "error");
+      if (!data.ok) {
+        setMessage(data.error || "Aktion fehlgeschlagen", "error");
+        return null;
+      }
+      if (data.screenshot) renderSetupScreenshot(data.screenshot);
+      return data;
+    }
+
+    document.getElementById("setup-start").addEventListener("click", async () => {
+      setMessage("Oeffne Amazon-Anmeldung...");
+      const data = await setupAction("api/setup/start");
+      if (data) setMessage("Amazon-Anmeldung geoeffnet.", "ok");
+    });
+
+    document.getElementById("setup-save").addEventListener("click", async () => {
+      const data = await setupAction("api/setup/save");
+      if (data) setMessage(`Session gespeichert (${data.result.cookie_count} Cookies).`, "ok");
+    });
+
+    document.getElementById("setup-stop").addEventListener("click", async () => {
+      const data = await setupAction("api/setup/stop");
+      if (data) {
+        setupBrowser.style.display = "none";
+        setMessage("Browser geschlossen.", "ok");
+      }
+    });
+
+    setupScreenshot.addEventListener("click", async (event) => {
+      setupFocused = true;
+      const rect = setupScreenshot.getBoundingClientRect();
+      const x = Math.round((event.clientX - rect.left) * setupSize.width / rect.width);
+      const y = Math.round((event.clientY - rect.top) * setupSize.height / rect.height);
+      await setupAction("api/setup/click", {x, y});
+    });
+
+    document.addEventListener("keydown", async (event) => {
+      if (!setupFocused || setupBrowser.style.display === "none") return;
+      const tag = document.activeElement?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (event.key.length === 1) {
+        event.preventDefault();
+        await setupAction("api/setup/type", {text: event.key});
+        return;
+      }
+      if (["Enter", "Tab", "Backspace", "Escape"].includes(event.key)) {
+        event.preventDefault();
+        await setupAction("api/setup/key", {key: event.key});
+      }
+    });
+
+    document.addEventListener("paste", async (event) => {
+      if (!setupFocused || setupBrowser.style.display === "none") return;
+      const text = event.clipboardData?.getData("text") || "";
+      if (!text) return;
+      event.preventDefault();
+      await setupAction("api/setup/type", {text});
     });
 
     document.getElementById("check-alexa").addEventListener("click", async () => {

@@ -13,15 +13,16 @@
 6. Die **Weboberflaeche** oeffnen.
 7. Modus **Alexa direkt - Home Assistant Liste** waehlen.
 8. Amazon-Domain und Bring-/Ziel-Liste auswaehlen.
-9. Amazon-Session speichern oder Cookies importieren.
+9. **Amazon-Anmeldung oeffnen**, im eingeblendeten Amazon-Browser anmelden und
+   danach **Session uebernehmen**.
 
 ## Direkter Alexa-Modus
 
 Der direkte Modus laeuft komplett in diesem Add-on. Chromium/Selenium oeffnet
 die Alexa-Einkaufsliste auf der Amazon-Webseite und nutzt importierte Amazon-
 Session-Cookies. Amazon-Benutzername und Passwort werden nicht im Add-on
-gespeichert. Die Weboberflaeche kann einen Login-Versuch ausfuehren und danach
-nur die Browser-Cookies persistieren.
+gespeichert. Die Weboberflaeche oeffnet dafuer einen internen Amazon-Browser;
+nach erfolgreicher Anmeldung werden nur die Browser-Cookies persistiert.
 
 Beispiel:
 
@@ -35,10 +36,9 @@ remove_completed: false
 log_level: info
 ```
 
-Falls Amazon den automatisierten Login blockiert oder weitere Pruefungen
-verlangt, koennen Cookies in der Weboberflaeche importiert werden. Erwartet wird
-eine JSON-Liste im Format, das Browser-Cookie-Export-Erweiterungen typischerweise
-liefern.
+Falls der interne Browser nicht ausreicht, koennen Cookies weiterhin in der
+Weboberflaeche importiert werden. Erwartet wird eine JSON-Liste im Format, das
+Browser-Cookie-Export-Erweiterungen typischerweise liefern.
 
 ## HA-Listenmodus
 

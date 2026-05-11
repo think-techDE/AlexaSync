@@ -36,3 +36,9 @@
 - Unterstuetzte Architekturen auf `amd64` und `aarch64` begrenzt, weil Chromium dort am stabilsten verfuegbar ist.
 - Amazon-Cookies werden mit restriktiven Dateirechten gespeichert.
 - Wenn ein bereits synchronisierter Alexa-Eintrag dort verschwindet, wird der HA-Eintrag als erledigt markiert statt erneut nach Alexa geschrieben.
+
+## 0.6.0
+
+- Interaktiven Amazon-Setup-Browser in die Weboberflaeche integriert.
+- Direkten Amazon-Passwort-Endpoint entfernt.
+- Session kann nach manueller Anmeldung im internen Browser uebernommen werden.

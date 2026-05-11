@@ -45,7 +45,7 @@ Die YAML-Optionen bleiben als Start-/Fallbackwerte erhalten.
 
 Amazon stellt keine offizielle stabile API fuer Alexa-Einkaufslisten bereit. Das
 Add-on speichert deshalb keine Amazon-Zugangsdaten. Die Weboberflaeche kann
-einmalig einen Login-Versuch ausfuehren und speichert danach nur die Browser-
-Session-Cookies mit restriktiven Dateirechten. Wenn Amazon die Session beendet
-oder den automatisierten Login blockiert, muessen die Cookies erneut importiert
-oder die Session erneut gespeichert werden.
+einen internen Amazon-Browser oeffnen. Nach der Anmeldung werden nur die Browser-
+Session-Cookies mit restriktiven Dateirechten gespeichert. Wenn Amazon die
+Session beendet, muss die Anmeldung erneut durchlaufen oder Cookies importiert
+werden.
