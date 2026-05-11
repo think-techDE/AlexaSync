@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.1
+
+- Alexa-Media-Player-Import uebernimmt nur noch explizit ausgewaehlte Sessions.
+- Weboberflaeche zeigt gefundene Alexa-Media-Player-Sessions als Auswahl an.
+- Konto-Import verlangt eine konkrete Alexa-Media-Player-Session statt automatisch die erste passende zu nehmen.
+
 ## 0.8.0
 
 - Mehrere Amazon-Konten koennen mit einer gemeinsamen Bring-/HA-Ziel-Liste synchronisiert werden.

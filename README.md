@@ -31,7 +31,8 @@ aber ohne separates Server-Add-on.
 6. Sync-Modus **Alexa direkt - Home Assistant Liste** waehlen.
 7. Amazon-Domain, z.B. `amazon.de`, und die Bring-/Ziel-Liste auswaehlen.
 8. Falls Alexa Media Player bereits eingerichtet ist:
-   **Alle aus Alexa Media Player uebernehmen** klicken.
+   gewuenschte Sessions markieren und **Ausgewaehlte aus Alexa Media Player
+   uebernehmen** klicken.
 9. Weitere Amazon-Konten bei Bedarf mit **Amazon-Konto hinzufuegen** anlegen.
 10. Sonst pro Konto **Amazon-Anmeldung oeffnen**, im eingeblendeten Amazon-
     Browser anmelden und danach **Session uebernehmen**.

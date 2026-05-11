@@ -14,7 +14,8 @@
 7. Modus **Alexa direkt - Home Assistant Liste** waehlen.
 8. Amazon-Domain und Bring-/Ziel-Liste auswaehlen.
 9. Wenn Alexa Media Player bereits eingerichtet ist:
-   **Alle aus Alexa Media Player uebernehmen** klicken.
+   gewuenschte Sessions markieren und **Ausgewaehlte aus Alexa Media Player
+   uebernehmen** klicken.
 10. Weitere Amazon-Konten bei Bedarf mit **Amazon-Konto hinzufuegen** anlegen.
 11. Sonst pro Konto **Amazon-Anmeldung oeffnen**, im eingeblendeten Amazon-
     Browser anmelden und danach **Session uebernehmen**.
@@ -28,10 +29,11 @@ gespeichert.
 
 Wenn Alexa Media Player bereits laeuft, kann das Add-on dessen Session aus
 `/homeassistant/.storage/alexa_media*.pickle` uebernehmen. Wenn mehrere Dateien
-vorhanden sind, legt das Add-on mehrere Amazon-Konten an. Die Home-Assistant-
-Konfiguration wird dafuer nur read-only eingebunden. Falls keine passende Session
-vorhanden ist, oeffnet die Weboberflaeche pro Konto einen internen Amazon-
-Browser; nach erfolgreicher Anmeldung werden nur die Browser-Cookies persistiert.
+vorhanden sind, legt das Add-on nur fuer die in der Weboberflaeche markierten
+Sessions Amazon-Konten an. Die Home-Assistant-Konfiguration wird dafuer nur
+read-only eingebunden. Falls keine passende Session vorhanden ist, oeffnet die
+Weboberflaeche pro Konto einen internen Amazon-Browser; nach erfolgreicher
+Anmeldung werden nur die Browser-Cookies persistiert.
 
 Mehrere Amazon-Konten werden gegen dieselbe `ha_list` synchronisiert:
 

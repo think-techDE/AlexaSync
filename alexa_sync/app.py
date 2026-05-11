@@ -341,11 +341,12 @@ def import_alexa_media_session(
     source_name: str | None = None,
 ) -> dict[str, Any]:
     """Import cookies from Alexa Media Player's local cookie pickle."""
+    if not source_name:
+        raise RuntimeError("Bitte eine Alexa-Media-Player-Session auswaehlen.")
     session_files = find_alexa_media_session_files()
-    if source_name:
-        session_files = [path for path in session_files if path.name == source_name]
+    session_files = [path for path in session_files if path.name == source_name]
     if not session_files:
-        raise RuntimeError("Keine Alexa-Media-Player-Session in der Home-Assistant-Konfiguration gefunden.")
+        raise RuntimeError("Ausgewaehlte Alexa-Media-Player-Session nicht gefunden.")
 
     errors: list[str] = []
     cookie_path = account_cookie_path(account_id)
@@ -373,11 +374,15 @@ def import_alexa_media_session(
     raise RuntimeError(f"Keine nutzbare Alexa-Media-Player-Session gefunden.{details}")
 
 
-def import_all_alexa_media_sessions(settings: dict[str, Any]) -> dict[str, Any]:
-    """Import all detected Alexa Media Player sessions and create account entries."""
-    session_files = find_alexa_media_session_files()
+def import_selected_alexa_media_sessions(settings: dict[str, Any], source_names: list[str]) -> dict[str, Any]:
+    """Import selected Alexa Media Player sessions and create account entries."""
+    selected_names = {str(name) for name in source_names if str(name).strip()}
+    if not selected_names:
+        raise RuntimeError("Bitte mindestens eine Alexa-Media-Player-Session auswaehlen.")
+
+    session_files = [path for path in find_alexa_media_session_files() if path.name in selected_names]
     if not session_files:
-        raise RuntimeError("Keine Alexa-Media-Player-Session in der Home-Assistant-Konfiguration gefunden.")
+        raise RuntimeError("Keine der ausgewaehlten Alexa-Media-Player-Sessions wurde gefunden.")
 
     existing_accounts = list(settings.get("amazon_accounts") or [])
     if (
@@ -1245,10 +1250,14 @@ class ConfigHandler(BaseHTTPRequestHandler):
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
-        if self.path == "/api/alexa/import_amp_all":
+        if self.path == "/api/alexa/import_amp_selected":
             try:
+                payload = self.read_json()
+                sources = payload.get("sources")
+                if not isinstance(sources, list):
+                    raise ValueError("Bitte Alexa-Media-Player-Sessions auswaehlen.")
                 settings = load_settings()
-                result = import_all_alexa_media_sessions(settings)
+                result = import_selected_alexa_media_sessions(settings, sources)
                 self.send_json({"ok": True, "result": result})
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
@@ -1875,6 +1884,24 @@ INDEX_HTML = r"""<!doctype html>
     .account-card .actions {
       margin-top: 12px;
     }
+    .session-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .session-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 9px 10px;
+      font-weight: 500;
+    }
+    .session-row span {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
     .setup-browser {
       border: 1px solid var(--border);
       border-radius: 8px;
@@ -2011,12 +2038,13 @@ INDEX_HTML = r"""<!doctype html>
       <div class="internal-alexa-field">
         <label>Amazon-Konten</label>
         <div class="actions">
-          <button id="import-amp-all" type="button">Alle aus Alexa Media Player uebernehmen</button>
+          <button id="import-amp-selected" type="button">Ausgewaehlte aus Alexa Media Player uebernehmen</button>
           <button id="add-account" type="button">Amazon-Konto hinzufuegen</button>
           <button id="setup-save" type="button">Session uebernehmen</button>
           <button id="setup-stop" type="button">Browser schliessen</button>
         </div>
         <p id="amp-status" class="setup-hint"></p>
+        <div id="amp-session-list" class="session-list"></div>
         <p class="setup-hint">Jedes aktivierte Amazon-Konto wird mit derselben Bring-/Ziel-Liste synchronisiert. Neue Bring-Eintraege werden in alle aktiven Alexa-Listen geschrieben; erledigte Eintraege werden aus allen aktiven Alexa-Listen entfernt.</p>
         <div id="account-list" class="account-list"></div>
         <div id="setup-browser" class="setup-browser">
@@ -2067,6 +2095,7 @@ INDEX_HTML = r"""<!doctype html>
     const cookies = document.getElementById("cookies");
     const accountList = document.getElementById("account-list");
     const cookieAccount = document.getElementById("cookie-account");
+    const ampSessionList = document.getElementById("amp-session-list");
     const setupBrowser = document.getElementById("setup-browser");
     const setupScreenshot = document.getElementById("setup-screenshot");
     const ampStatus = document.getElementById("amp-status");
@@ -2134,6 +2163,25 @@ INDEX_HTML = r"""<!doctype html>
       }
     }
 
+    function renderAlexaMediaSessions() {
+      ampSessionList.replaceChildren();
+      for (const session of alexaMediaSessions) {
+        const label = document.createElement("label");
+        label.className = "session-row";
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.value = session.name;
+        const text = document.createElement("span");
+        text.textContent = session.label || session.name;
+        label.append(checkbox, text);
+        ampSessionList.appendChild(label);
+      }
+    }
+
+    function selectedAlexaMediaSessions() {
+      return [...ampSessionList.querySelectorAll('input[type="checkbox"]:checked')].map((input) => input.value);
+    }
+
     function renderAccounts(accounts) {
       const normalized = accounts && accounts.length ? accounts : [{
         id: "default",
@@ -2163,7 +2211,7 @@ INDEX_HTML = r"""<!doctype html>
             </label>
             <label>Alexa-Media-Player-Session
               <select class="account-session">
-                <option value="">Automatisch waehlen</option>
+                <option value="">Bitte auswaehlen</option>
                 ${sessionOptions}
               </select>
             </label>
@@ -2231,6 +2279,7 @@ INDEX_HTML = r"""<!doctype html>
       ampStatus.textContent = data.alexa_media_session_available
         ? `${alexaMediaSessions.length} Alexa-Media-Player-Session(s) gefunden.`
         : "Keine Alexa-Media-Player-Session gefunden. Der Login-Browser bleibt als Fallback verfuegbar.";
+      renderAlexaMediaSessions();
       renderAccounts(settings.amazon_accounts || []);
       applyModeVisibility();
       renderStatus(data.status);
@@ -2284,15 +2333,24 @@ INDEX_HTML = r"""<!doctype html>
       setMessage(data.ok ? "Cookies importiert." : data.error, data.ok ? "ok" : "error");
     });
 
-    document.getElementById("import-amp-all").addEventListener("click", async () => {
-      setMessage("Uebernehme alle Sessions aus Alexa Media Player...");
-      const res = await fetch("api/alexa/import_amp_all", {method: "POST"});
+    document.getElementById("import-amp-selected").addEventListener("click", async () => {
+      const sources = selectedAlexaMediaSessions();
+      if (!sources.length) {
+        setMessage("Bitte mindestens eine Alexa-Media-Player-Session auswaehlen.", "error");
+        return;
+      }
+      setMessage("Uebernehme ausgewaehlte Sessions aus Alexa Media Player...");
+      const res = await fetch("api/alexa/import_amp_selected", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({sources})
+      });
       const data = await res.json();
       if (!data.ok) {
         setMessage(data.error || "Uebernahme fehlgeschlagen", "error");
         return;
       }
-      setMessage(`${data.result.imported.length} Session(s) uebernommen.`, "ok");
+      setMessage(`${data.result.imported.length} ausgewaehlte Session(s) uebernommen.`, "ok");
       await loadConfig();
     });
 
@@ -2321,6 +2379,10 @@ INDEX_HTML = r"""<!doctype html>
 
       if (button.dataset.action === "import") {
         const source = card.querySelector(".account-session").value;
+        if (!source) {
+          setMessage("Bitte fuer dieses Konto eine Alexa-Media-Player-Session auswaehlen.", "error");
+          return;
+        }
         setMessage(`Uebernehme Session fuer ${account.name}...`);
         const res = await fetch("api/alexa/import_amp", {
           method: "POST",
