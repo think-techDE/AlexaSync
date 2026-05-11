@@ -81,7 +81,7 @@ class RuntimeState:
                     "configured": False,
                     "last_sync": None,
                     "last_writes": 0,
-                    "last_error": "Bitte zuerst den Sync-Modus konfigurieren.",
+                    "last_error": get_configuration_error(settings),
                 }
                 return self.last_result
 
@@ -196,6 +196,7 @@ def setup_logging(level: str) -> None:
         format="%(asctime)s %(levelname)s: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
+    logging.getLogger("urllib3.connectionpool").setLevel(logging.ERROR)
 
 
 def read_json_file(path: Path, fallback: dict[str, Any]) -> dict[str, Any]:
@@ -316,11 +317,28 @@ def validate_settings(settings: dict[str, Any]) -> None:
 
 def is_configured(settings: dict[str, Any]) -> bool:
     """Return if sync lists are configured."""
+    return get_configuration_error(settings) is None
+
+
+def get_configuration_error(settings: dict[str, Any]) -> str | None:
+    """Return a user-facing configuration error, if any."""
     if settings["mode"] == "internal_alexa":
-        return bool(settings["amazon_domain"] and settings["ha_list"])
+        if not settings["amazon_domain"]:
+            return "Bitte Amazon-Domain eintragen."
+        if not settings["ha_list"]:
+            return "Bitte Bring-/Ziel-Liste auswaehlen."
+        if not ALEXA_COOKIES_PATH.exists():
+            return "Amazon-Session fehlt. Bitte Amazon-Anmeldung oeffnen und Session uebernehmen."
+        return None
     if settings["mode"] == "alexa_server":
-        return bool(settings["alexa_server_host"] and settings["ha_list"])
-    return bool(settings["list_a"] and settings["list_b"] and settings["list_a"] != settings["list_b"])
+        if not settings["alexa_server_host"] or not settings["ha_list"]:
+            return "Bitte Alexa-Server und Home-Assistant-Liste auswaehlen."
+        return None
+    if not settings["list_a"] or not settings["list_b"]:
+        return "Bitte beide Listen auswaehlen."
+    if settings["list_a"] == settings["list_b"]:
+        return "Bitte zwei unterschiedliche Listen auswaehlen."
+    return None
 
 
 def load_state() -> dict[str, Any]:
@@ -1046,6 +1064,7 @@ def sync_alexa_items_with_ha(
     alexa_items = index_items(alexa.get_items())
     ha_items = index_items(client.get_items(ha_entity))
     stored_items = state.setdefault("items", {})
+    initial_sync = not state.get("alexa_ha_initial_sync_done")
     keys = set(alexa_items) | set(ha_items) | set(stored_items)
     writes = 0
 
@@ -1059,6 +1078,13 @@ def sync_alexa_items_with_ha(
             continue
 
         if alexa_item is None and ha_item is not None:
+            if initial_sync:
+                item_state["ha_only_baseline"] = True
+                remember(item_state, alexa_item, ha_item)
+                continue
+            if item_state.get("ha_only_baseline"):
+                remember(item_state, alexa_item, ha_item)
+                continue
             if (
                 item_state.get("a_uid")
                 and item_state.get("b_status") == STATUS_NEEDS_ACTION
@@ -1102,6 +1128,7 @@ def sync_alexa_items_with_ha(
         remember(item_state, alexa_item, ha_item)
 
     state["updated_at"] = time.time()
+    state["alexa_ha_initial_sync_done"] = True
     save_state(state)
 
     if settings["remove_completed"]:

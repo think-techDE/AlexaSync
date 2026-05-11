@@ -48,3 +48,9 @@
 - Setup-Browser startet ueber die Amazon-Konto-Seite statt ueber die fehleranfaellige `/ap/signin`-URL.
 - Amazon-Domain-Eingabe wird normalisiert, z.B. `https://www.amazon.de/...` zu `amazon.de`.
 - Fallback auf Amazon-Startseite, falls die Konto-URL eine Fehlerseite liefert.
+
+## 0.6.2
+
+- Sync wartet ohne Fehler-Stacktrace, solange noch keine Amazon-Session gespeichert ist.
+- Selenium-Verbindungswarnungen aus der interaktiven Browsersteuerung werden unterdrueckt.
+- Erster Alexa/Bring-Abgleich ist konservativer: bestehende Bring-Eintraege werden als Bestand markiert und nicht massenhaft nach Alexa kopiert.
