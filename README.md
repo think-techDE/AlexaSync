@@ -3,6 +3,11 @@
 Home-Assistant-Add-on-Repository fuer die Synchronisation der Alexa-
 Einkaufsliste mit einer Home-Assistant-`todo`-Liste, zum Beispiel Bring.
 
+Seit Version `0.8.0` koennen mehrere Amazon-Konten mit derselben Bring-/Ziel-
+Liste synchronisiert werden. Neue Bring-Eintraege werden in alle aktiven Alexa-
+Listen geschrieben, erledigte Bring-Eintraege werden aus allen aktiven Alexa-
+Listen entfernt.
+
 Seit Version `0.7.0` kann das Add-on eine vorhandene Alexa-Media-Player-
 Session aus Home Assistant uebernehmen. Damit ist im Normalfall keine zweite
 Amazon-Anmeldung noetig.
@@ -26,9 +31,10 @@ aber ohne separates Server-Add-on.
 6. Sync-Modus **Alexa direkt - Home Assistant Liste** waehlen.
 7. Amazon-Domain, z.B. `amazon.de`, und die Bring-/Ziel-Liste auswaehlen.
 8. Falls Alexa Media Player bereits eingerichtet ist:
-   **Aus Alexa Media Player uebernehmen** klicken.
-9. Sonst **Amazon-Anmeldung oeffnen**, im eingeblendeten Amazon-Browser anmelden
-   und danach **Session uebernehmen**.
+   **Alle aus Alexa Media Player uebernehmen** klicken.
+9. Weitere Amazon-Konten bei Bedarf mit **Amazon-Konto hinzufuegen** anlegen.
+10. Sonst pro Konto **Amazon-Anmeldung oeffnen**, im eingeblendeten Amazon-
+    Browser anmelden und danach **Session uebernehmen**.
 
 Die YAML-Konfiguration bleibt optional als Fallback moeglich:
 

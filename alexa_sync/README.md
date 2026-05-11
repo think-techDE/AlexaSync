@@ -5,9 +5,9 @@ oder zwei vorhandene Home-Assistant-`todo`-Listen miteinander.
 
 Typischer Einsatz:
 
-- Alexa schreibt per Sprachbefehl auf die Alexa-Einkaufsliste.
+- Mehrere Amazon-Konten schreiben per Sprachbefehl auf ihre Alexa-Einkaufsliste.
 - Das Add-on kopiert neue Eintraege in die Bring-Einkaufsliste.
-- Abgehakte Eintraege in Bring werden aus der aktiven Alexa-Liste entfernt.
+- Abgehakte Eintraege in Bring werden aus allen aktiven Alexa-Listen entfernt.
 
 ## Konfiguration
 
@@ -15,7 +15,9 @@ Die bevorzugte Konfiguration erfolgt ueber die **Weboberflaeche** des Add-ons
 oder ueber den Sidebar-Eintrag **Alexa Sync**. Fuer den Standardfall muss nur
 die Bring-/Ziel-Liste gewaehlt und eine Amazon-Session gespeichert werden. Wenn
 Alexa Media Player bereits in Home Assistant eingerichtet ist, kann dessen
-Session per Knopfdruck uebernommen werden.
+Session per Knopfdruck uebernommen werden. Sind mehrere Alexa-Media-Player-
+Sessions vorhanden, kann das Add-on daraus automatisch mehrere Amazon-Konten
+anlegen.
 
 Modi:
 
@@ -33,6 +35,7 @@ Die YAML-Optionen bleiben als Start-/Fallbackwerte erhalten.
 | --- | --- |
 | `mode` | `internal_alexa`, `ha_todo_pair` oder `alexa_server`. |
 | `amazon_domain` | Amazon-Domain fuer den direkten Alexa-Modus, z.B. `amazon.de`. |
+| `amazon_accounts` | Amazon-Konten fuer den direkten Alexa-Modus. Wird bevorzugt ueber die Weboberflaeche gepflegt. |
 | `ha_list` | HA-To-do-Liste fuer den direkten Alexa- oder Server-Modus. |
 | `list_a` | Erste Home-Assistant-To-do-Entity fuer den HA-Listenmodus. |
 | `list_b` | Zweite Home-Assistant-To-do-Entity fuer den HA-Listenmodus. |
@@ -47,12 +50,13 @@ Die YAML-Optionen bleiben als Start-/Fallbackwerte erhalten.
 
 Amazon stellt keine offizielle stabile API fuer Alexa-Einkaufslisten bereit. Das
 Add-on speichert deshalb keine Amazon-Zugangsdaten. Der einfachste Weg ist
-**Aus Alexa Media Player uebernehmen**. Dafuer liest das Add-on die vorhandene
-Alexa-Media-Player-Cookie-Datei aus der Home-Assistant-Konfiguration. Der Zugriff
-auf die Home-Assistant-Konfiguration ist read-only.
+**Alle aus Alexa Media Player uebernehmen**. Dafuer liest das Add-on vorhandene
+Alexa-Media-Player-Cookie-Dateien aus der Home-Assistant-Konfiguration und legt
+je Datei ein Amazon-Konto an. Der Zugriff auf die Home-Assistant-Konfiguration
+ist read-only.
 
 Falls keine Alexa-Media-Player-Session gefunden wird, kann die Weboberflaeche
-einen internen Amazon-Browser oeffnen. Nach der Anmeldung werden nur die Browser-
-Session-Cookies mit restriktiven Dateirechten gespeichert. Wenn Amazon die
-Session beendet, muss die Anmeldung erneut durchlaufen oder Cookies importiert
-werden.
+pro Konto einen internen Amazon-Browser oeffnen. Nach der Anmeldung werden nur
+die Browser-Session-Cookies mit restriktiven Dateirechten gespeichert. Wenn
+Amazon die Session beendet, muss die Anmeldung fuer das betroffene Konto erneut
+durchlaufen oder Cookies importiert werden.

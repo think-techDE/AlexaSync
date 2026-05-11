@@ -25,15 +25,18 @@ OPTIONS_PATH = Path("/data/options.json")
 SETTINGS_PATH = Path("/data/settings.json")
 STATE_PATH = Path("/data/sync_state.json")
 ALEXA_COOKIES_PATH = Path("/data/alexa_cookies.json")
+ALEXA_ACCOUNTS_DIR = Path("/data/alexa_accounts")
 HA_CONFIG_PATHS = (Path("/homeassistant"), Path("/config"))
 WEB_PORT = 8099
 
 STATUS_NEEDS_ACTION = "needs_action"
 STATUS_COMPLETED = "completed"
+DEFAULT_ACCOUNT_ID = "default"
 
 DEFAULT_SETTINGS = {
     "mode": "internal_alexa",
     "amazon_domain": "amazon.de",
+    "amazon_accounts": [],
     "list_a": "",
     "list_b": "",
     "alexa_server_host": "",
@@ -74,6 +77,7 @@ class RuntimeState:
             "last_error": None,
         }
         self.setup_browser: InternalAlexaClient | None = None
+        self.setup_account: dict[str, Any] | None = None
 
     def sync(self) -> dict[str, Any]:
         """Run one synchronized pass with locking."""
@@ -106,16 +110,20 @@ class RuntimeState:
                 }
             return self.last_result
 
-    def start_setup_browser(self, amazon_domain: str) -> dict[str, Any]:
+    def start_setup_browser(self, account: dict[str, Any]) -> dict[str, Any]:
         """Start an interactive Amazon login browser."""
         with self.lock:
             self.close_setup_browser()
-            browser = InternalAlexaClient(amazon_domain)
+            browser = InternalAlexaClient(
+                account["amazon_domain"],
+                account_cookie_path(account["id"]),
+            )
             browser.__enter__()
             if browser.driver is None:
                 raise RuntimeError("Browser konnte nicht gestartet werden.")
             browser.open_setup_page()
             self.setup_browser = browser
+            self.setup_account = account
             return self.get_setup_screenshot()
 
     def close_setup_browser(self) -> None:
@@ -123,6 +131,7 @@ class RuntimeState:
         if self.setup_browser is not None:
             self.setup_browser.__exit__(None, None, None)
             self.setup_browser = None
+            self.setup_account = None
 
     def get_setup_screenshot(self) -> dict[str, Any]:
         """Return setup browser screenshot."""
@@ -179,11 +188,13 @@ class RuntimeState:
         """Persist cookies from setup browser."""
         if self.setup_browser is None or self.setup_browser.driver is None:
             raise RuntimeError("Setup-Browser ist nicht gestartet.")
+        if self.setup_account is None:
+            raise RuntimeError("Kein Amazon-Konto fuer den Setup-Browser ausgewaehlt.")
         cookies = self.setup_browser.driver.get_cookies()
         if not cookies:
             raise RuntimeError("Keine Cookies im Setup-Browser gefunden.")
-        save_cookie_list(cookies)
-        return {"saved": True, "cookie_count": len(cookies)}
+        save_cookie_list(cookies, account_cookie_path(self.setup_account["id"]))
+        return {"saved": True, "cookie_count": len(cookies), "account_id": self.setup_account["id"]}
 
 
 def handle_stop(_signum: int, _frame: Any) -> None:
@@ -226,17 +237,60 @@ def write_json_file(path: Path, data: dict[str, Any]) -> None:
     tmp_path.replace(path)
 
 
-def save_cookie_list(cookies: list[dict[str, Any]]) -> None:
+def save_cookie_list(cookies: list[dict[str, Any]], path: Path | None = None) -> None:
     """Persist Amazon cookies with owner-only permissions where supported."""
-    ALEXA_COOKIES_PATH.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = ALEXA_COOKIES_PATH.with_suffix(".tmp")
+    target_path = path or ALEXA_COOKIES_PATH
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = target_path.with_suffix(".tmp")
     with tmp_path.open("w", encoding="utf-8") as cookie_file:
         json.dump(cookies, cookie_file, ensure_ascii=True, indent=2)
-    tmp_path.replace(ALEXA_COOKIES_PATH)
+    tmp_path.replace(target_path)
     try:
-        ALEXA_COOKIES_PATH.chmod(0o600)
+        target_path.chmod(0o600)
     except OSError:
         LOGGER.debug("Could not chmod cookie file", exc_info=True)
+
+
+def sanitize_account_id(value: Any) -> str:
+    """Return a stable filesystem-safe Amazon account id."""
+    account_id = str(value or "").strip().casefold()
+    account_id = re.sub(r"[^a-z0-9_@.-]+", "_", account_id)
+    account_id = re.sub(r"_+", "_", account_id).strip("._-")
+    return account_id or DEFAULT_ACCOUNT_ID
+
+
+def unique_account_id(base_id: str, used_ids: set[str]) -> str:
+    """Return an unused account id based on base_id."""
+    candidate = sanitize_account_id(base_id)
+    if candidate not in used_ids:
+        used_ids.add(candidate)
+        return candidate
+    suffix = 2
+    while f"{candidate}_{suffix}" in used_ids:
+        suffix += 1
+    unique_id = f"{candidate}_{suffix}"
+    used_ids.add(unique_id)
+    return unique_id
+
+
+def account_cookie_path(account_id: str) -> Path:
+    """Return cookie storage path for an Amazon account."""
+    safe_id = sanitize_account_id(account_id)
+    if safe_id == DEFAULT_ACCOUNT_ID:
+        return ALEXA_COOKIES_PATH
+    return ALEXA_ACCOUNTS_DIR / f"{safe_id}.json"
+
+
+def read_cookie_count(path: Path) -> int:
+    """Return number of stored cookies or zero if unreadable."""
+    if not path.exists():
+        return 0
+    try:
+        with path.open("r", encoding="utf-8") as cookie_file:
+            cookies = json.load(cookie_file)
+    except (OSError, json.JSONDecodeError):
+        return 0
+    return len(cookies) if isinstance(cookies, list) else 0
 
 
 def find_alexa_media_session_files() -> list[Path]:
@@ -267,13 +321,34 @@ def safe_mtime(path: Path) -> float:
         return 0
 
 
-def import_alexa_media_session(amazon_domain: str) -> dict[str, Any]:
+def alexa_media_session_label(path: Path) -> str:
+    """Derive a readable account label from an Alexa Media Player pickle name."""
+    name = path.name
+    if name.startswith("alexa_media."):
+        name = name[len("alexa_media.") :]
+    elif name.startswith("alexa_media_"):
+        name = name[len("alexa_media_") :]
+    for suffix in (".pickle", ".pkl"):
+        if name.endswith(suffix):
+            name = name[: -len(suffix)]
+    return name.replace("_", " ").strip() or path.stem
+
+
+def import_alexa_media_session(
+    amazon_domain: str,
+    *,
+    account_id: str = DEFAULT_ACCOUNT_ID,
+    source_name: str | None = None,
+) -> dict[str, Any]:
     """Import cookies from Alexa Media Player's local cookie pickle."""
     session_files = find_alexa_media_session_files()
+    if source_name:
+        session_files = [path for path in session_files if path.name == source_name]
     if not session_files:
         raise RuntimeError("Keine Alexa-Media-Player-Session in der Home-Assistant-Konfiguration gefunden.")
 
     errors: list[str] = []
+    cookie_path = account_cookie_path(account_id)
     for session_file in session_files:
         try:
             # Alexa Media Player stores an aiohttp cookie jar pickle in HA's
@@ -290,12 +365,90 @@ def import_alexa_media_session(amazon_domain: str) -> dict[str, Any]:
             errors.append(f"{session_file.name}: keine Amazon-Cookies gefunden")
             continue
 
-        save_cookie_list(cookies)
+        save_cookie_list(cookies, cookie_path)
         LOGGER.info("Imported %s cookies from Alexa Media Player session %s", len(cookies), session_file.name)
         return {"saved": True, "cookie_count": len(cookies), "source": session_file.name}
 
     details = f" Details: {'; '.join(errors[:3])}" if errors else ""
     raise RuntimeError(f"Keine nutzbare Alexa-Media-Player-Session gefunden.{details}")
+
+
+def import_all_alexa_media_sessions(settings: dict[str, Any]) -> dict[str, Any]:
+    """Import all detected Alexa Media Player sessions and create account entries."""
+    session_files = find_alexa_media_session_files()
+    if not session_files:
+        raise RuntimeError("Keine Alexa-Media-Player-Session in der Home-Assistant-Konfiguration gefunden.")
+
+    existing_accounts = list(settings.get("amazon_accounts") or [])
+    if (
+        len(existing_accounts) == 1
+        and existing_accounts[0].get("id") == DEFAULT_ACCOUNT_ID
+        and not account_cookie_path(DEFAULT_ACCOUNT_ID).exists()
+    ):
+        existing_accounts = []
+    used_ids = {sanitize_account_id(account.get("id")) for account in existing_accounts if isinstance(account, dict)}
+    accounts_by_id = {
+        sanitize_account_id(account.get("id")): dict(account)
+        for account in existing_accounts
+        if isinstance(account, dict)
+    }
+    imported: list[dict[str, Any]] = []
+    errors: list[str] = []
+
+    for session_file in session_files:
+        label = alexa_media_session_label(session_file)
+        base_id = sanitize_account_id(label)
+        account_id = base_id if base_id in accounts_by_id else unique_account_id(base_id, used_ids)
+        try:
+            with session_file.open("rb") as cookie_file:
+                raw_cookie_data = pickle.load(cookie_file)
+            cookies = extract_alexa_media_cookies(raw_cookie_data, settings["amazon_domain"])
+        except Exception as exc:
+            LOGGER.warning("Could not import Alexa Media Player session from %s", session_file.name)
+            errors.append(f"{session_file.name}: {exc}")
+            continue
+
+        if not cookies:
+            errors.append(f"{session_file.name}: keine Amazon-Cookies gefunden")
+            continue
+
+        save_cookie_list(cookies, account_cookie_path(account_id))
+        account = accounts_by_id.get(account_id) or {}
+        account.update(
+            {
+                "id": account_id,
+                "name": account.get("name") or label,
+                "amazon_domain": account.get("amazon_domain") or infer_amazon_domain(cookies, settings["amazon_domain"]),
+                "enabled": True,
+            }
+        )
+        accounts_by_id[account_id] = account
+        imported.append({"account_id": account_id, "name": account["name"], "source": session_file.name})
+
+    if not imported:
+        details = f" Details: {'; '.join(errors[:3])}" if errors else ""
+        raise RuntimeError(f"Keine nutzbare Alexa-Media-Player-Session gefunden.{details}")
+
+    settings["amazon_accounts"] = normalize_amazon_accounts(list(accounts_by_id.values()), settings["amazon_domain"])
+    normalized = normalize_settings(settings)
+    write_json_file(SETTINGS_PATH, normalized)
+    return {"imported": imported, "errors": errors, "settings": normalized}
+
+
+def infer_amazon_domain(cookies: list[dict[str, Any]], fallback: str) -> str:
+    """Infer marketplace domain from imported cookies."""
+    candidates: list[str] = []
+    for cookie in cookies:
+        domain = str(cookie.get("domain") or "").strip().lower().lstrip(".")
+        if domain.startswith("www."):
+            domain = domain[4:]
+        if domain.startswith("alexa."):
+            domain = domain[6:]
+        if domain.startswith("amazon."):
+            candidates.append(domain)
+    if not candidates:
+        return normalize_amazon_domain(fallback)
+    return sorted(candidates, key=len)[0]
 
 
 def extract_alexa_media_cookies(raw_cookie_data: Any, amazon_domain: str) -> list[dict[str, Any]]:
@@ -481,6 +634,42 @@ def normalize_amazon_domain(value: Any) -> str:
     return domain or "amazon.de"
 
 
+def normalize_amazon_accounts(raw_accounts: Any, legacy_domain: str) -> list[dict[str, Any]]:
+    """Normalize configured Amazon accounts."""
+    if not isinstance(raw_accounts, list) or not raw_accounts:
+        raw_accounts = [
+            {
+                "id": DEFAULT_ACCOUNT_ID,
+                "name": "Amazon Konto 1",
+                "amazon_domain": legacy_domain,
+                "enabled": True,
+            }
+        ]
+
+    accounts: list[dict[str, Any]] = []
+    used_ids: set[str] = set()
+    for index, raw_account in enumerate(raw_accounts, start=1):
+        raw = raw_account if isinstance(raw_account, dict) else {}
+        base_id = raw.get("id") or raw.get("name") or f"amazon_konto_{index}"
+        account_id = unique_account_id(str(base_id), used_ids)
+        name = str(raw.get("name") or f"Amazon Konto {index}").strip()
+        domain = normalize_amazon_domain(raw.get("amazon_domain") or raw.get("domain") or legacy_domain)
+        accounts.append(
+            {
+                "id": account_id,
+                "name": name or f"Amazon Konto {index}",
+                "amazon_domain": domain,
+                "enabled": bool(raw.get("enabled", True)),
+            }
+        )
+    return accounts
+
+
+def enabled_amazon_accounts(settings: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return enabled Amazon accounts from settings."""
+    return [account for account in settings.get("amazon_accounts", []) if account.get("enabled", True)]
+
+
 def load_options() -> dict[str, Any]:
     """Load add-on options as initial defaults."""
     return read_json_file(OPTIONS_PATH, DEFAULT_SETTINGS)
@@ -492,6 +681,12 @@ def normalize_settings(raw: dict[str, Any]) -> dict[str, Any]:
     settings.update(raw)
     settings["mode"] = str(settings.get("mode", "internal_alexa")).strip()
     settings["amazon_domain"] = normalize_amazon_domain(settings.get("amazon_domain", "amazon.de"))
+    settings["amazon_accounts"] = normalize_amazon_accounts(
+        settings.get("amazon_accounts"),
+        settings["amazon_domain"],
+    )
+    if settings["amazon_accounts"]:
+        settings["amazon_domain"] = settings["amazon_accounts"][0]["amazon_domain"]
     settings["list_a"] = str(settings.get("list_a", "")).strip()
     settings["list_b"] = str(settings.get("list_b", "")).strip()
     settings["alexa_server_host"] = str(settings.get("alexa_server_host", "")).strip()
@@ -522,8 +717,11 @@ def save_settings(settings: dict[str, Any]) -> dict[str, Any]:
 def validate_settings(settings: dict[str, Any]) -> None:
     """Validate settings."""
     if settings["mode"] == "internal_alexa":
-        if not settings["amazon_domain"]:
-            raise ValueError("Bitte Amazon-Domain eintragen.")
+        if not enabled_amazon_accounts(settings):
+            raise ValueError("Bitte mindestens ein Amazon-Konto aktivieren.")
+        for account in enabled_amazon_accounts(settings):
+            if not account["amazon_domain"]:
+                raise ValueError(f"Bitte Amazon-Domain fuer {account['name']} eintragen.")
         if not settings["ha_list"]:
             raise ValueError("Bitte eine Home-Assistant-Liste auswaehlen.")
         return
@@ -549,12 +747,18 @@ def is_configured(settings: dict[str, Any]) -> bool:
 def get_configuration_error(settings: dict[str, Any]) -> str | None:
     """Return a user-facing configuration error, if any."""
     if settings["mode"] == "internal_alexa":
-        if not settings["amazon_domain"]:
-            return "Bitte Amazon-Domain eintragen."
+        accounts = enabled_amazon_accounts(settings)
+        if not accounts:
+            return "Bitte mindestens ein Amazon-Konto aktivieren."
         if not settings["ha_list"]:
             return "Bitte Bring-/Ziel-Liste auswaehlen."
-        if not ALEXA_COOKIES_PATH.exists():
-            return "Amazon-Session fehlt. Bitte Amazon-Anmeldung oeffnen und Session uebernehmen."
+        missing_sessions = [
+            account["name"]
+            for account in accounts
+            if not account_cookie_path(account["id"]).exists()
+        ]
+        if missing_sessions:
+            return "Amazon-Session fehlt fuer: " + ", ".join(missing_sessions)
         return None
     if settings["mode"] == "alexa_server":
         if not settings["alexa_server_host"] or not settings["ha_list"]:
@@ -735,9 +939,10 @@ class AlexaServerClient:
 class InternalAlexaClient:
     """Selenium-backed Alexa shopping list client."""
 
-    def __init__(self, amazon_domain: str) -> None:
+    def __init__(self, amazon_domain: str, cookie_path: Path | None = None) -> None:
         """Initialize client."""
         self.amazon_domain = amazon_domain
+        self.cookie_path = cookie_path or ALEXA_COOKIES_PATH
         self.driver = None
 
     def __enter__(self) -> "InternalAlexaClient":
@@ -773,11 +978,11 @@ class InternalAlexaClient:
         """Load persisted Amazon cookies into Chromium."""
         if self.driver is None:
             raise RuntimeError("Browser is not running")
-        if not ALEXA_COOKIES_PATH.exists():
+        if not self.cookie_path.exists():
             raise RuntimeError("Amazon-Session fehlt. Bitte Cookies in der Weboberflaeche importieren.")
 
         self.driver.get(f"https://www.{self.amazon_domain}")
-        with ALEXA_COOKIES_PATH.open("r", encoding="utf-8") as cookie_file:
+        with self.cookie_path.open("r", encoding="utf-8") as cookie_file:
             cookies = json.load(cookie_file)
         if not isinstance(cookies, list):
             raise RuntimeError("Cookie-Datei muss eine JSON-Liste enthalten.")
@@ -925,6 +1130,47 @@ class InternalAlexaClient:
             time.sleep(1)
 
 
+def resolve_account_from_payload(settings: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    """Resolve an Amazon account from API payload or existing settings."""
+    raw_account = payload.get("account")
+    if isinstance(raw_account, dict):
+        return normalize_amazon_accounts([raw_account], settings["amazon_domain"])[0]
+
+    account_id = sanitize_account_id(payload.get("account_id") or DEFAULT_ACCOUNT_ID)
+    for account in settings.get("amazon_accounts", []):
+        if account["id"] == account_id:
+            return account
+    raise ValueError("Amazon-Konto nicht gefunden. Bitte speichern und erneut versuchen.")
+
+
+def amazon_account_statuses(settings: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return cookie/session status for configured Amazon accounts."""
+    statuses: list[dict[str, Any]] = []
+    for account in settings.get("amazon_accounts", []):
+        cookie_path = account_cookie_path(account["id"])
+        cookie_count = read_cookie_count(cookie_path)
+        statuses.append(
+            {
+                "id": account["id"],
+                "cookie_present": cookie_path.exists() and cookie_count > 0,
+                "cookie_count": cookie_count,
+            }
+        )
+    return statuses
+
+
+def alexa_media_sessions_payload() -> list[dict[str, Any]]:
+    """Return detected Alexa Media Player sessions for the UI."""
+    return [
+        {
+            "name": path.name,
+            "label": alexa_media_session_label(path),
+            "mtime": safe_mtime(path),
+        }
+        for path in find_alexa_media_session_files()
+    ]
+
+
 class ConfigHandler(BaseHTTPRequestHandler):
     """Ingress web UI and JSON API."""
 
@@ -964,28 +1210,55 @@ class ConfigHandler(BaseHTTPRequestHandler):
         if self.path == "/api/alexa/cookies":
             try:
                 payload = self.read_json()
+                settings = load_settings()
+                account = resolve_account_from_payload(settings, payload)
                 cookies = payload.get("cookies")
                 if isinstance(cookies, str):
                     cookies = json.loads(cookies)
                 if not isinstance(cookies, list):
                     raise ValueError("Cookies muessen als JSON-Liste uebergeben werden.")
-                save_cookie_list(cookies)
+                save_cookie_list(cookies, account_cookie_path(account["id"]))
                 self.send_json({"ok": True})
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
+        if self.path == "/api/alexa/status":
+            try:
+                payload = self.read_json()
+                settings = load_settings()
+                account = resolve_account_from_payload(settings, payload)
+                self.send_json(self.get_alexa_status_payload(account))
+            except Exception as exc:
+                self.send_json({"ok": False, "authenticated": False, "message": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
         if self.path == "/api/alexa/import_amp":
             try:
+                payload = self.read_json()
                 settings = load_settings()
-                result = import_alexa_media_session(settings["amazon_domain"])
+                account = resolve_account_from_payload(settings, payload)
+                result = import_alexa_media_session(
+                    account["amazon_domain"],
+                    account_id=account["id"],
+                    source_name=payload.get("source") or None,
+                )
+                self.send_json({"ok": True, "result": result})
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if self.path == "/api/alexa/import_amp_all":
+            try:
+                settings = load_settings()
+                result = import_all_alexa_media_sessions(settings)
                 self.send_json({"ok": True, "result": result})
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
         if self.path == "/api/setup/start":
             try:
+                payload = self.read_json()
                 settings = load_settings()
-                screenshot = self.runtime.start_setup_browser(settings["amazon_domain"])
+                account = resolve_account_from_payload(settings, payload)
+                screenshot = self.runtime.start_setup_browser(account)
                 self.send_json({"ok": True, "screenshot": screenshot})
             except Exception as exc:
                 LOGGER.exception("Setup browser start failed")
@@ -1033,6 +1306,8 @@ class ConfigHandler(BaseHTTPRequestHandler):
 
     def get_config_payload(self) -> dict[str, Any]:
         """Return UI configuration payload."""
+        settings = load_settings()
+        account_statuses = amazon_account_statuses(settings)
         try:
             entities = self.runtime.client.list_todo_entities()
             entity_error = None
@@ -1042,27 +1317,38 @@ class ConfigHandler(BaseHTTPRequestHandler):
             entity_error = str(exc)
 
         return {
-            "settings": load_settings(),
+            "settings": settings,
             "todo_entities": entities,
             "suggested_ha_list": suggest_todo_entity(entities),
             "status": self.runtime.last_result,
-            "alexa_cookies_present": ALEXA_COOKIES_PATH.exists(),
+            "alexa_cookies_present": any(status["cookie_present"] for status in account_statuses),
+            "amazon_accounts_status": account_statuses,
             "alexa_media_session_available": bool(find_alexa_media_session_files()),
+            "alexa_media_sessions": alexa_media_sessions_payload(),
             "entity_error": entity_error,
         }
 
-    def get_alexa_status_payload(self) -> dict[str, Any]:
+    def get_alexa_status_payload(self, account: dict[str, Any] | None = None) -> dict[str, Any]:
         """Return internal Alexa authentication status."""
         settings = load_settings()
-        if not ALEXA_COOKIES_PATH.exists():
+        accounts = enabled_amazon_accounts(settings)
+        if account is None and not accounts:
+            return {"ok": True, "authenticated": False, "message": "Kein Amazon-Konto aktiv."}
+        target_account = account or accounts[0]
+        cookie_path = account_cookie_path(target_account["id"])
+        if not cookie_path.exists():
             return {"ok": True, "authenticated": False, "message": "Keine Cookies importiert."}
         try:
-            with InternalAlexaClient(settings["amazon_domain"]) as alexa:
+            with InternalAlexaClient(target_account["amazon_domain"], cookie_path) as alexa:
                 authenticated = alexa.is_authenticated()
             return {
                 "ok": True,
                 "authenticated": authenticated,
-                "message": "Amazon-Session ist gueltig." if authenticated else "Amazon-Session ist nicht gueltig.",
+                "message": (
+                    f"Amazon-Session fuer {target_account['name']} ist gueltig."
+                    if authenticated
+                    else f"Amazon-Session fuer {target_account['name']} ist nicht gueltig."
+                ),
             }
         except Exception as exc:
             LOGGER.exception("Alexa authentication check failed")
@@ -1265,18 +1551,55 @@ def sync_once(client: HomeAssistantClient, settings: dict[str, Any], state: dict
 def sync_internal_alexa_once(
     client: HomeAssistantClient, settings: dict[str, Any], state: dict[str, Any]
 ) -> int:
-    """Synchronize built-in Alexa Selenium client with one Home Assistant to-do list."""
-    with InternalAlexaClient(settings["amazon_domain"]) as alexa:
-        if not alexa.is_authenticated():
-            raise RuntimeError("Amazon-Session ist nicht authentifiziert. Bitte Cookies neu importieren.")
-        return sync_alexa_items_with_ha(
-            alexa,
-            client,
-            settings["ha_list"],
-            settings,
-            state,
-            alexa_label="interne Alexa-Liste",
-        )
+    """Synchronize one or more built-in Alexa Selenium clients with one HA list."""
+    writes = 0
+    errors: list[str] = []
+    account_settings = dict(settings)
+    account_settings["remove_completed"] = False
+
+    for account in enabled_amazon_accounts(settings):
+        account_state = get_internal_account_state(state, account["id"])
+        cookie_path = account_cookie_path(account["id"])
+        try:
+            with InternalAlexaClient(account["amazon_domain"], cookie_path) as alexa:
+                if not alexa.is_authenticated():
+                    raise RuntimeError("Amazon-Session ist nicht authentifiziert.")
+                writes += sync_alexa_items_with_ha(
+                    alexa,
+                    client,
+                    settings["ha_list"],
+                    account_settings,
+                    account_state,
+                    alexa_label=f"Alexa-Liste {account['name']}",
+                    save_after=False,
+                )
+        except Exception as exc:
+            LOGGER.exception("Sync failed for Amazon account %s", account["name"])
+            errors.append(f"{account['name']}: {exc}")
+
+    state["updated_at"] = time.time()
+    save_state(state)
+
+    if errors:
+        raise RuntimeError("Sync teilweise fehlgeschlagen: " + "; ".join(errors))
+
+    if settings["remove_completed"]:
+        LOGGER.info("Removing completed items from %s", settings["ha_list"])
+        client.remove_completed_items(settings["ha_list"])
+        writes += 1
+
+    return writes
+
+
+def get_internal_account_state(state: dict[str, Any], account_id: str) -> dict[str, Any]:
+    """Return per-Amazon-account sync state, migrating the legacy state if needed."""
+    account_states = state.setdefault("amazon_accounts", {})
+    safe_id = sanitize_account_id(account_id)
+    if safe_id not in account_states:
+        account_states[safe_id] = {"items": {}}
+        if safe_id == DEFAULT_ACCOUNT_ID and isinstance(state.get("items"), dict):
+            account_states[safe_id]["items"] = state["items"]
+    return account_states[safe_id]
 
 
 def sync_alexa_server_once(
@@ -1302,6 +1625,7 @@ def sync_alexa_items_with_ha(
     state: dict[str, Any],
     *,
     alexa_label: str,
+    save_after: bool = True,
 ) -> int:
     """Synchronize active Alexa items with one Home Assistant to-do list."""
     alexa_items = index_items(alexa.get_items())
@@ -1364,7 +1688,8 @@ def sync_alexa_items_with_ha(
         remember(item_state, alexa_item, ha_item)
 
     state["updated_at"] = time.time()
-    save_state(state)
+    if save_after:
+        save_state(state)
 
     if settings["remove_completed"]:
         LOGGER.info("Removing completed items from %s", ha_entity)
@@ -1526,6 +1851,30 @@ INDEX_HTML = r"""<!doctype html>
       min-height: 120px;
       resize: vertical;
     }
+    .account-list {
+      display: grid;
+      gap: 12px;
+      margin-top: 14px;
+    }
+    .account-card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+    }
+    .account-grid {
+      display: grid;
+      grid-template-columns: minmax(160px, 1fr) minmax(140px, 1fr);
+      gap: 12px;
+      align-items: end;
+    }
+    .account-status {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 10px;
+    }
+    .account-card .actions {
+      margin-top: 12px;
+    }
     .setup-browser {
       border: 1px solid var(--border);
       border-radius: 8px;
@@ -1595,7 +1944,7 @@ INDEX_HTML = r"""<!doctype html>
     dt { color: var(--muted); }
     dd { margin: 0; }
     @media (max-width: 700px) {
-      .grid, dl { grid-template-columns: 1fr; }
+      .grid, .account-grid, dl { grid-template-columns: 1fr; }
       main { margin: 20px auto; }
     }
   </style>
@@ -1603,7 +1952,7 @@ INDEX_HTML = r"""<!doctype html>
 <body>
   <main>
     <h1>Alexa Sync</h1>
-    <p>Alexa per Sprache befuellen, in Bring abhaken. Waehle nur deine Bring-Liste und speichere eine Amazon-Session.</p>
+    <p>Alexa per Sprache befuellen, in Bring abhaken. Waehle deine Bring-Liste und verbinde ein oder mehrere Amazon-Konten.</p>
 
     <form id="config-form">
       <div class="mode-row">
@@ -1627,7 +1976,7 @@ INDEX_HTML = r"""<!doctype html>
       </details>
       <div class="grid">
         <div class="internal-alexa-field">
-          <label for="amazon-domain">Amazon-Domain</label>
+          <label for="amazon-domain">Standard-Domain fuer neue Konten</label>
           <input id="amazon-domain" name="amazon_domain" type="text" placeholder="amazon.de">
         </div>
         <div class="internal-alexa-field">
@@ -1660,22 +2009,23 @@ INDEX_HTML = r"""<!doctype html>
         </div>
       </div>
       <div class="internal-alexa-field">
-        <label>Amazon-Session</label>
+        <label>Amazon-Konten</label>
         <div class="actions">
-          <button id="import-amp" type="button">Aus Alexa Media Player uebernehmen</button>
-          <button id="setup-start" type="button">Amazon-Anmeldung oeffnen</button>
+          <button id="import-amp-all" type="button">Alle aus Alexa Media Player uebernehmen</button>
+          <button id="add-account" type="button">Amazon-Konto hinzufuegen</button>
           <button id="setup-save" type="button">Session uebernehmen</button>
           <button id="setup-stop" type="button">Browser schliessen</button>
-          <button id="check-alexa" type="button">Amazon-Session pruefen</button>
         </div>
         <p id="amp-status" class="setup-hint"></p>
-        <p class="setup-hint">Am einfachsten ist die Uebernahme aus Alexa Media Player. Falls dort keine Session gefunden wird: Amazon-Anmeldung oeffnen, in die Browseransicht klicken und normal anmelden. Danach Session uebernehmen.</p>
+        <p class="setup-hint">Jedes aktivierte Amazon-Konto wird mit derselben Bring-/Ziel-Liste synchronisiert. Neue Bring-Eintraege werden in alle aktiven Alexa-Listen geschrieben; erledigte Eintraege werden aus allen aktiven Alexa-Listen entfernt.</p>
+        <div id="account-list" class="account-list"></div>
         <div id="setup-browser" class="setup-browser">
           <img id="setup-screenshot" alt="Amazon Login Browser">
         </div>
       </div>
       <div class="internal-alexa-field">
         <label for="cookies">Fallback: Amazon-Session-Cookies als JSON</label>
+        <select id="cookie-account"></select>
         <textarea id="cookies" placeholder='[{"name":"session-id","value":"...","domain":".amazon.de"}]'></textarea>
         <div class="actions">
           <button id="save-cookies" type="button">Cookies importieren</button>
@@ -1715,10 +2065,14 @@ INDEX_HTML = r"""<!doctype html>
     const removeCompleted = document.getElementById("remove-completed");
     const message = document.getElementById("message");
     const cookies = document.getElementById("cookies");
+    const accountList = document.getElementById("account-list");
+    const cookieAccount = document.getElementById("cookie-account");
     const setupBrowser = document.getElementById("setup-browser");
     const setupScreenshot = document.getElementById("setup-screenshot");
     const ampStatus = document.getElementById("amp-status");
     const modeInputs = [...document.querySelectorAll('input[name="mode"]')];
+    let accountStatuses = [];
+    let alexaMediaSessions = [];
     let setupFocused = false;
     let setupSize = {width: 1366, height: 768};
 
@@ -1740,6 +2094,95 @@ INDEX_HTML = r"""<!doctype html>
         select.appendChild(option(entity.entity_id, `${entity.name} (${entity.entity_id})`));
       }
       select.value = selected || "";
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+      }[char]));
+    }
+
+    function newAccountId() {
+      return `konto_${Date.now()}_${Math.random().toString(16).slice(2, 6)}`;
+    }
+
+    function statusForAccount(accountId) {
+      return accountStatuses.find((status) => status.id === accountId) || {};
+    }
+
+    function accountFromCard(card) {
+      return {
+        id: card.dataset.accountId || newAccountId(),
+        name: card.querySelector(".account-name").value.trim() || "Amazon Konto",
+        amazon_domain: card.querySelector(".account-domain").value.trim() || amazonDomain.value || "amazon.de",
+        enabled: card.querySelector(".account-enabled").checked
+      };
+    }
+
+    function collectAccounts() {
+      return [...accountList.querySelectorAll(".account-card")].map(accountFromCard);
+    }
+
+    function renderCookieAccountSelect(accounts) {
+      cookieAccount.replaceChildren();
+      for (const account of accounts) {
+        cookieAccount.appendChild(option(account.id, account.name));
+      }
+    }
+
+    function renderAccounts(accounts) {
+      const normalized = accounts && accounts.length ? accounts : [{
+        id: "default",
+        name: "Amazon Konto 1",
+        amazon_domain: amazonDomain.value || "amazon.de",
+        enabled: true
+      }];
+      accountList.replaceChildren();
+      for (const account of normalized) {
+        const status = statusForAccount(account.id);
+        const statusText = status.cookie_present
+          ? `Session gespeichert (${status.cookie_count || 0} Cookies)`
+          : "Noch keine Session gespeichert";
+        const card = document.createElement("div");
+        card.className = "account-card";
+        card.dataset.accountId = account.id || newAccountId();
+        const sessionOptions = alexaMediaSessions.map((session) => (
+          `<option value="${escapeHtml(session.name)}">${escapeHtml(session.label || session.name)}</option>`
+        )).join("");
+        card.innerHTML = `
+          <div class="account-grid">
+            <label>Kontoname
+              <input class="account-name" type="text" value="${escapeHtml(account.name)}">
+            </label>
+            <label>Amazon-Domain
+              <input class="account-domain" type="text" value="${escapeHtml(account.amazon_domain || amazonDomain.value || "amazon.de")}">
+            </label>
+            <label>Alexa-Media-Player-Session
+              <select class="account-session">
+                <option value="">Automatisch waehlen</option>
+                ${sessionOptions}
+              </select>
+            </label>
+            <label class="check">
+              <input class="account-enabled" type="checkbox" ${account.enabled === false ? "" : "checked"}>
+              Konto aktiv
+            </label>
+          </div>
+          <div class="account-status">${escapeHtml(statusText)}</div>
+          <div class="actions">
+            <button type="button" data-action="import">Session aus Alexa Media Player uebernehmen</button>
+            <button type="button" data-action="login">Amazon-Anmeldung oeffnen</button>
+            <button type="button" data-action="check">Session pruefen</button>
+            <button type="button" data-action="remove">Entfernen</button>
+          </div>
+        `;
+        accountList.appendChild(card);
+      }
+      renderCookieAccountSelect(normalized);
     }
 
     function renderStatus(status) {
@@ -1772,6 +2215,8 @@ INDEX_HTML = r"""<!doctype html>
       const settings = data.settings;
       const mode = settings.mode || "internal_alexa";
       const suggestedList = data.suggested_ha_list || "";
+      accountStatuses = data.amazon_accounts_status || [];
+      alexaMediaSessions = data.alexa_media_sessions || [];
       document.querySelector(`input[name="mode"][value="${mode}"]`).checked = true;
       fillSelect(listA, data.todo_entities, settings.list_a);
       fillSelect(listB, data.todo_entities, settings.list_b);
@@ -1784,8 +2229,9 @@ INDEX_HTML = r"""<!doctype html>
       syncCompleted.checked = settings.sync_completed;
       removeCompleted.checked = settings.remove_completed;
       ampStatus.textContent = data.alexa_media_session_available
-        ? "Alexa-Media-Player-Session gefunden."
+        ? `${alexaMediaSessions.length} Alexa-Media-Player-Session(s) gefunden.`
         : "Keine Alexa-Media-Player-Session gefunden. Der Login-Browser bleibt als Fallback verfuegbar.";
+      renderAccounts(settings.amazon_accounts || []);
       applyModeVisibility();
       renderStatus(data.status);
       if (data.entity_error) setMessage(data.entity_error, "error");
@@ -1796,6 +2242,7 @@ INDEX_HTML = r"""<!doctype html>
       const payload = {
         mode: selectedMode(),
         amazon_domain: amazonDomain.value,
+        amazon_accounts: collectAccounts(),
         list_a: listA.value,
         list_b: listB.value,
         alexa_server_host: alexaHost.value,
@@ -1831,22 +2278,82 @@ INDEX_HTML = r"""<!doctype html>
       const res = await fetch("api/alexa/cookies", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({cookies: cookies.value})
+        body: JSON.stringify({account_id: cookieAccount.value, cookies: cookies.value})
       });
       const data = await res.json();
       setMessage(data.ok ? "Cookies importiert." : data.error, data.ok ? "ok" : "error");
     });
 
-    document.getElementById("import-amp").addEventListener("click", async () => {
-      setMessage("Uebernehme Session aus Alexa Media Player...");
-      const res = await fetch("api/alexa/import_amp", {method: "POST"});
+    document.getElementById("import-amp-all").addEventListener("click", async () => {
+      setMessage("Uebernehme alle Sessions aus Alexa Media Player...");
+      const res = await fetch("api/alexa/import_amp_all", {method: "POST"});
       const data = await res.json();
       if (!data.ok) {
         setMessage(data.error || "Uebernahme fehlgeschlagen", "error");
         return;
       }
-      setMessage(`Session uebernommen (${data.result.cookie_count} Cookies aus ${data.result.source}).`, "ok");
+      setMessage(`${data.result.imported.length} Session(s) uebernommen.`, "ok");
       await loadConfig();
+    });
+
+    document.getElementById("add-account").addEventListener("click", () => {
+      const accounts = collectAccounts();
+      accounts.push({
+        id: newAccountId(),
+        name: `Amazon Konto ${accounts.length + 1}`,
+        amazon_domain: amazonDomain.value || "amazon.de",
+        enabled: true
+      });
+      renderAccounts(accounts);
+    });
+
+    accountList.addEventListener("click", async (event) => {
+      const button = event.target.closest("button[data-action]");
+      if (!button) return;
+      const card = button.closest(".account-card");
+      const account = accountFromCard(card);
+
+      if (button.dataset.action === "remove") {
+        card.remove();
+        renderCookieAccountSelect(collectAccounts());
+        return;
+      }
+
+      if (button.dataset.action === "import") {
+        const source = card.querySelector(".account-session").value;
+        setMessage(`Uebernehme Session fuer ${account.name}...`);
+        const res = await fetch("api/alexa/import_amp", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({account, source})
+        });
+        const data = await res.json();
+        if (!data.ok) {
+          setMessage(data.error || "Uebernahme fehlgeschlagen", "error");
+          return;
+        }
+        setMessage(`Session fuer ${account.name} uebernommen (${data.result.cookie_count} Cookies).`, "ok");
+        await loadConfig();
+        return;
+      }
+
+      if (button.dataset.action === "login") {
+        setMessage(`Oeffne Amazon-Anmeldung fuer ${account.name}...`);
+        const data = await setupAction("api/setup/start", {account});
+        if (data) setMessage(`Amazon-Anmeldung fuer ${account.name} geoeffnet.`, "ok");
+        return;
+      }
+
+      if (button.dataset.action === "check") {
+        setMessage(`Pruefe Amazon-Session fuer ${account.name}...`);
+        const res = await fetch("api/alexa/status", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({account})
+        });
+        const data = await res.json();
+        setMessage(data.message, data.authenticated ? "ok" : "error");
+      }
     });
 
     function renderSetupScreenshot(payload) {
@@ -1870,15 +2377,12 @@ INDEX_HTML = r"""<!doctype html>
       return data;
     }
 
-    document.getElementById("setup-start").addEventListener("click", async () => {
-      setMessage("Oeffne Amazon-Anmeldung...");
-      const data = await setupAction("api/setup/start");
-      if (data) setMessage("Amazon-Anmeldung geoeffnet.", "ok");
-    });
-
     document.getElementById("setup-save").addEventListener("click", async () => {
       const data = await setupAction("api/setup/save");
-      if (data) setMessage(`Session gespeichert (${data.result.cookie_count} Cookies).`, "ok");
+      if (data) {
+        setMessage(`Session gespeichert (${data.result.cookie_count} Cookies).`, "ok");
+        await loadConfig();
+      }
     });
 
     document.getElementById("setup-stop").addEventListener("click", async () => {
@@ -1918,13 +2422,6 @@ INDEX_HTML = r"""<!doctype html>
       if (!text) return;
       event.preventDefault();
       await setupAction("api/setup/type", {text});
-    });
-
-    document.getElementById("check-alexa").addEventListener("click", async () => {
-      setMessage("Pruefe Amazon-Session...");
-      const res = await fetch("api/alexa/status");
-      const data = await res.json();
-      setMessage(data.message, data.authenticated ? "ok" : "error");
     });
 
     modeInputs.forEach((input) => input.addEventListener("change", applyModeVisibility));

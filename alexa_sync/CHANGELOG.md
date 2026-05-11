@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.0
+
+- Mehrere Amazon-Konten koennen mit einer gemeinsamen Bring-/HA-Ziel-Liste synchronisiert werden.
+- Alexa-Media-Player-Import kann alle gefundenen Sessions automatisch als Konten anlegen.
+- Amazon-Session-Cookies und Sync-Metadaten werden pro Konto getrennt gespeichert.
+- Weboberflaeche um Kontoverwaltung, Konto-Status und kontoabhaengige Session-Aktionen erweitert.
+
 ## 0.7.0
 
 - Alexa-Media-Player-Session kann per Knopfdruck aus der Home-Assistant-Konfiguration uebernommen werden.
