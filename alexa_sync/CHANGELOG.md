@@ -54,3 +54,9 @@
 - Sync wartet ohne Fehler-Stacktrace, solange noch keine Amazon-Session gespeichert ist.
 - Selenium-Verbindungswarnungen aus der interaktiven Browsersteuerung werden unterdrueckt.
 - Erster Alexa/Bring-Abgleich ist konservativer: bestehende Bring-Eintraege werden als Bestand markiert und nicht massenhaft nach Alexa kopiert.
+
+## 0.6.3
+
+- Erstabgleich bildet wieder bewusst die Vereinigung aus Alexa- und Bring-/HA-Liste.
+- Bereits beidseitig vorhandene Artikel werden per normalisiertem Namen referenziert, statt doppelt angelegt.
+- Normalisierung fuer Artikelnamen verbessert, inklusive Umlauten und Satzzeichen.

@@ -897,7 +897,15 @@ def suggest_todo_entity(entities: list[dict[str, str]]) -> str:
 
 def normalize_summary(summary: str) -> str:
     """Normalize item names for matching."""
-    return re.sub(r"\s+", " ", summary.strip().casefold())
+    normalized = summary.strip().casefold()
+    normalized = (
+        normalized.replace("ä", "ae")
+        .replace("ö", "oe")
+        .replace("ü", "ue")
+        .replace("ß", "ss")
+    )
+    normalized = re.sub(r"[^\w]+", " ", normalized)
+    return re.sub(r"\s+", " ", normalized).strip()
 
 
 def normalize_status(status: Any) -> str:
@@ -1064,7 +1072,6 @@ def sync_alexa_items_with_ha(
     alexa_items = index_items(alexa.get_items())
     ha_items = index_items(client.get_items(ha_entity))
     stored_items = state.setdefault("items", {})
-    initial_sync = not state.get("alexa_ha_initial_sync_done")
     keys = set(alexa_items) | set(ha_items) | set(stored_items)
     writes = 0
 
@@ -1078,13 +1085,7 @@ def sync_alexa_items_with_ha(
             continue
 
         if alexa_item is None and ha_item is not None:
-            if initial_sync:
-                item_state["ha_only_baseline"] = True
-                remember(item_state, alexa_item, ha_item)
-                continue
-            if item_state.get("ha_only_baseline"):
-                remember(item_state, alexa_item, ha_item)
-                continue
+            item_state.pop("ha_only_baseline", None)
             if (
                 item_state.get("a_uid")
                 and item_state.get("b_status") == STATUS_NEEDS_ACTION
@@ -1128,7 +1129,6 @@ def sync_alexa_items_with_ha(
         remember(item_state, alexa_item, ha_item)
 
     state["updated_at"] = time.time()
-    state["alexa_ha_initial_sync_done"] = True
     save_state(state)
 
     if settings["remove_completed"]:
