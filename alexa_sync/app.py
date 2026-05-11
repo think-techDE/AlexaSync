@@ -111,7 +111,7 @@ class RuntimeState:
             browser.__enter__()
             if browser.driver is None:
                 raise RuntimeError("Browser konnte nicht gestartet werden.")
-            browser.driver.get(f"https://www.{amazon_domain}/ap/signin")
+            browser.open_setup_page()
             self.setup_browser = browser
             return self.get_setup_screenshot()
 
@@ -244,6 +244,16 @@ def parse_int(value: Any, default: int, minimum: int, maximum: int) -> int:
     return max(minimum, min(maximum, parsed))
 
 
+def normalize_amazon_domain(value: Any) -> str:
+    """Normalize Amazon marketplace domain input."""
+    domain = str(value or "amazon.de").strip().lower()
+    domain = re.sub(r"^https?://", "", domain)
+    domain = domain.split("/", 1)[0]
+    if domain.startswith("www."):
+        domain = domain[4:]
+    return domain or "amazon.de"
+
+
 def load_options() -> dict[str, Any]:
     """Load add-on options as initial defaults."""
     return read_json_file(OPTIONS_PATH, DEFAULT_SETTINGS)
@@ -254,7 +264,7 @@ def normalize_settings(raw: dict[str, Any]) -> dict[str, Any]:
     settings = dict(DEFAULT_SETTINGS)
     settings.update(raw)
     settings["mode"] = str(settings.get("mode", "internal_alexa")).strip()
-    settings["amazon_domain"] = str(settings.get("amazon_domain", "amazon.de")).strip()
+    settings["amazon_domain"] = normalize_amazon_domain(settings.get("amazon_domain", "amazon.de"))
     settings["list_a"] = str(settings.get("list_a", "")).strip()
     settings["list_b"] = str(settings.get("list_b", "")).strip()
     settings["alexa_server_host"] = str(settings.get("alexa_server_host", "")).strip()
@@ -546,6 +556,27 @@ class InternalAlexaClient:
     def _shopping_list_url(self) -> str:
         """Return the Alexa shopping list URL for the configured marketplace."""
         return f"https://www.{self.amazon_domain}/alexaquantum/sp/alexaShoppingList?ref=nav_asl"
+
+    def _account_url(self) -> str:
+        """Return a robust account URL that redirects to Amazon sign-in if needed."""
+        return f"https://www.{self.amazon_domain}/gp/css/homepage.html?ref_=nav_AccountFlyout_ya"
+
+    def _home_url(self) -> str:
+        """Return Amazon marketplace home URL."""
+        return f"https://www.{self.amazon_domain}/"
+
+    def open_setup_page(self) -> None:
+        """Open a login-capable Amazon page for interactive setup."""
+        if self.driver is None:
+            raise RuntimeError("Browser is not running")
+        self.driver.get(self._account_url())
+        time.sleep(3)
+        page = self.driver.page_source.lower()
+        current_url = str(self.driver.current_url).lower()
+        if "suchst du etwas" in page or "web-adresse" in page or "/errors/" in current_url:
+            LOGGER.info("Amazon account URL did not load, falling back to marketplace home")
+            self.driver.get(self._home_url())
+            time.sleep(3)
 
     def is_authenticated(self) -> bool:
         """Return if imported cookies still authenticate with Amazon."""
@@ -1374,7 +1405,7 @@ INDEX_HTML = r"""<!doctype html>
           <button id="setup-stop" type="button">Browser schliessen</button>
           <button id="check-alexa" type="button">Amazon-Session pruefen</button>
         </div>
-        <p class="setup-hint">Nach dem Oeffnen in die Browseransicht klicken und normal tippen. Enter, Tab und Backspace werden uebertragen. Danach Session uebernehmen.</p>
+        <p class="setup-hint">Nach dem Oeffnen in die Browseransicht klicken und normal anmelden. Wenn Amazon die Startseite zeigt, oben Konto/Anmelden waehlen. Enter, Tab und Backspace werden uebertragen. Danach Session uebernehmen.</p>
         <div id="setup-browser" class="setup-browser">
           <img id="setup-screenshot" alt="Amazon Login Browser">
         </div>

@@ -42,3 +42,9 @@
 - Interaktiven Amazon-Setup-Browser in die Weboberflaeche integriert.
 - Direkten Amazon-Passwort-Endpoint entfernt.
 - Session kann nach manueller Anmeldung im internen Browser uebernommen werden.
+
+## 0.6.1
+
+- Setup-Browser startet ueber die Amazon-Konto-Seite statt ueber die fehleranfaellige `/ap/signin`-URL.
+- Amazon-Domain-Eingabe wird normalisiert, z.B. `https://www.amazon.de/...` zu `amazon.de`.
+- Fallback auf Amazon-Startseite, falls die Konto-URL eine Fehlerseite liefert.
