@@ -13,16 +13,23 @@
 6. Die **Weboberflaeche** oeffnen.
 7. Modus **Alexa direkt - Home Assistant Liste** waehlen.
 8. Amazon-Domain und Bring-/Ziel-Liste auswaehlen.
-9. **Amazon-Anmeldung oeffnen**, im eingeblendeten Amazon-Browser anmelden und
-   danach **Session uebernehmen**.
+9. Wenn Alexa Media Player bereits eingerichtet ist:
+   **Aus Alexa Media Player uebernehmen** klicken.
+10. Sonst **Amazon-Anmeldung oeffnen**, im eingeblendeten Amazon-Browser anmelden
+    und danach **Session uebernehmen**.
 
 ## Direkter Alexa-Modus
 
 Der direkte Modus laeuft komplett in diesem Add-on. Chromium/Selenium oeffnet
 die Alexa-Einkaufsliste auf der Amazon-Webseite und nutzt importierte Amazon-
 Session-Cookies. Amazon-Benutzername und Passwort werden nicht im Add-on
-gespeichert. Die Weboberflaeche oeffnet dafuer einen internen Amazon-Browser;
-nach erfolgreicher Anmeldung werden nur die Browser-Cookies persistiert.
+gespeichert.
+
+Wenn Alexa Media Player bereits laeuft, kann das Add-on dessen Session aus
+`/homeassistant/.storage/alexa_media*.pickle` uebernehmen. Die Home-Assistant-
+Konfiguration wird dafuer nur read-only eingebunden. Falls keine passende Session
+vorhanden ist, oeffnet die Weboberflaeche einen internen Amazon-Browser; nach
+erfolgreicher Anmeldung werden nur die Browser-Cookies persistiert.
 
 Beispiel:
 

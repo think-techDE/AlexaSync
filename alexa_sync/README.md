@@ -13,7 +13,9 @@ Typischer Einsatz:
 
 Die bevorzugte Konfiguration erfolgt ueber die **Weboberflaeche** des Add-ons
 oder ueber den Sidebar-Eintrag **Alexa Sync**. Fuer den Standardfall muss nur
-die Bring-/Ziel-Liste gewaehlt und eine Amazon-Session gespeichert werden.
+die Bring-/Ziel-Liste gewaehlt und eine Amazon-Session gespeichert werden. Wenn
+Alexa Media Player bereits in Home Assistant eingerichtet ist, kann dessen
+Session per Knopfdruck uebernommen werden.
 
 Modi:
 
@@ -44,7 +46,12 @@ Die YAML-Optionen bleiben als Start-/Fallbackwerte erhalten.
 ## Amazon-Session
 
 Amazon stellt keine offizielle stabile API fuer Alexa-Einkaufslisten bereit. Das
-Add-on speichert deshalb keine Amazon-Zugangsdaten. Die Weboberflaeche kann
+Add-on speichert deshalb keine Amazon-Zugangsdaten. Der einfachste Weg ist
+**Aus Alexa Media Player uebernehmen**. Dafuer liest das Add-on die vorhandene
+Alexa-Media-Player-Cookie-Datei aus der Home-Assistant-Konfiguration. Der Zugriff
+auf die Home-Assistant-Konfiguration ist read-only.
+
+Falls keine Alexa-Media-Player-Session gefunden wird, kann die Weboberflaeche
 einen internen Amazon-Browser oeffnen. Nach der Anmeldung werden nur die Browser-
 Session-Cookies mit restriktiven Dateirechten gespeichert. Wenn Amazon die
 Session beendet, muss die Anmeldung erneut durchlaufen oder Cookies importiert

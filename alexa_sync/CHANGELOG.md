@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.0
+
+- Alexa-Media-Player-Session kann per Knopfdruck aus der Home-Assistant-Konfiguration uebernommen werden.
+- Home-Assistant-Konfiguration wird dafuer read-only in das Add-on eingebunden.
+- Weboberflaeche zeigt an, ob eine Alexa-Media-Player-Session gefunden wurde.
+
 ## 0.1.0
 
 - Initiale Add-on-Version.

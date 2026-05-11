@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from email.utils import parsedate_to_datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import logging
 import os
+import pickle
 from pathlib import Path
 import re
 import signal
@@ -23,6 +25,7 @@ OPTIONS_PATH = Path("/data/options.json")
 SETTINGS_PATH = Path("/data/settings.json")
 STATE_PATH = Path("/data/sync_state.json")
 ALEXA_COOKIES_PATH = Path("/data/alexa_cookies.json")
+HA_CONFIG_PATHS = (Path("/homeassistant"), Path("/config"))
 WEB_PORT = 8099
 
 STATUS_NEEDS_ACTION = "needs_action"
@@ -234,6 +237,229 @@ def save_cookie_list(cookies: list[dict[str, Any]]) -> None:
         ALEXA_COOKIES_PATH.chmod(0o600)
     except OSError:
         LOGGER.debug("Could not chmod cookie file", exc_info=True)
+
+
+def find_alexa_media_session_files() -> list[Path]:
+    """Find Alexa Media Player cookie jars in the mounted HA config directory."""
+    found: list[Path] = []
+    seen: set[Path] = set()
+    for base_path in HA_CONFIG_PATHS:
+        storage_path = base_path / ".storage"
+        if not storage_path.is_dir():
+            continue
+        for pattern in ("alexa_media*.pickle", "alexa_media*.pkl"):
+            try:
+                candidates = storage_path.glob(pattern)
+                for candidate in candidates:
+                    if candidate.is_file() and candidate not in seen:
+                        found.append(candidate)
+                        seen.add(candidate)
+            except OSError:
+                LOGGER.debug("Could not scan %s", storage_path, exc_info=True)
+    return sorted(found, key=lambda path: safe_mtime(path), reverse=True)
+
+
+def safe_mtime(path: Path) -> float:
+    """Return file mtime or zero if it cannot be read."""
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return 0
+
+
+def import_alexa_media_session(amazon_domain: str) -> dict[str, Any]:
+    """Import cookies from Alexa Media Player's local cookie pickle."""
+    session_files = find_alexa_media_session_files()
+    if not session_files:
+        raise RuntimeError("Keine Alexa-Media-Player-Session in der Home-Assistant-Konfiguration gefunden.")
+
+    errors: list[str] = []
+    for session_file in session_files:
+        try:
+            # Alexa Media Player stores an aiohttp cookie jar pickle in HA's
+            # local .storage directory. The add-on mounts this directory read-only.
+            with session_file.open("rb") as cookie_file:
+                raw_cookie_data = pickle.load(cookie_file)
+            cookies = extract_alexa_media_cookies(raw_cookie_data, amazon_domain)
+        except Exception as exc:
+            LOGGER.warning("Could not import Alexa Media Player session from %s", session_file.name)
+            errors.append(f"{session_file.name}: {exc}")
+            continue
+
+        if not cookies:
+            errors.append(f"{session_file.name}: keine Amazon-Cookies gefunden")
+            continue
+
+        save_cookie_list(cookies)
+        LOGGER.info("Imported %s cookies from Alexa Media Player session %s", len(cookies), session_file.name)
+        return {"saved": True, "cookie_count": len(cookies), "source": session_file.name}
+
+    details = f" Details: {'; '.join(errors[:3])}" if errors else ""
+    raise RuntimeError(f"Keine nutzbare Alexa-Media-Player-Session gefunden.{details}")
+
+
+def extract_alexa_media_cookies(raw_cookie_data: Any, amazon_domain: str) -> list[dict[str, Any]]:
+    """Convert Alexa Media Player/aiohttp cookie storage to Selenium cookies."""
+    cookies_by_key: dict[tuple[str, str, str], dict[str, Any]] = {}
+    normalized_amazon_domain = normalize_amazon_domain(amazon_domain)
+
+    def add_cookie(
+        name: Any,
+        value: Any,
+        domain_hint: Any = "",
+        path_hint: Any = "/",
+        secure: Any = False,
+        http_only: Any = False,
+        expires: Any = None,
+        same_site: Any = "",
+    ) -> None:
+        cookie_name = str(name or "").strip()
+        if not cookie_name or value is None:
+            return
+
+        domain = normalize_cookie_domain(domain_hint, normalized_amazon_domain)
+        if not domain:
+            return
+        path = str(path_hint or "/")
+        expiry = parse_cookie_expiry(expires)
+        if expiry is not None and expiry <= int(time.time()):
+            return
+
+        cookie: dict[str, Any] = {
+            "name": cookie_name,
+            "value": str(value),
+            "domain": domain,
+            "path": path,
+            "secure": bool(secure),
+            "httpOnly": bool(http_only),
+        }
+        if expiry is not None:
+            cookie["expiry"] = expiry
+
+        normalized_same_site = normalize_same_site(same_site)
+        if normalized_same_site:
+            cookie["sameSite"] = normalized_same_site
+
+        cookies_by_key[(domain, path, cookie_name)] = cookie
+
+    def collect(value: Any, domain_hint: Any = "", path_hint: Any = "/") -> None:
+        if value is None:
+            return
+
+        if is_cookie_dict(value):
+            add_cookie(
+                value.get("name"),
+                value.get("value"),
+                value.get("domain") or domain_hint,
+                value.get("path") or path_hint,
+                value.get("secure", False),
+                value.get("httpOnly", value.get("httponly", False)),
+                value.get("expiry", value.get("expires")),
+                value.get("sameSite", value.get("samesite", "")),
+            )
+            return
+
+        if is_morsel(value):
+            add_cookie(
+                getattr(value, "key", ""),
+                getattr(value, "value", ""),
+                safe_morsel_get(value, "domain") or domain_hint,
+                safe_morsel_get(value, "path") or path_hint,
+                safe_morsel_get(value, "secure"),
+                safe_morsel_get(value, "httponly"),
+                safe_morsel_get(value, "expires") or safe_morsel_get(value, "max-age"),
+                safe_morsel_get(value, "samesite"),
+            )
+            return
+
+        if isinstance(value, dict):
+            for key, child in value.items():
+                next_domain, next_path = cookie_hints_from_key(key, domain_hint, path_hint)
+                collect(child, next_domain, next_path)
+            return
+
+        if isinstance(value, (list, tuple, set)):
+            for child in value:
+                collect(child, domain_hint, path_hint)
+            return
+
+        if hasattr(value, "__iter__") and not isinstance(value, (str, bytes)):
+            try:
+                for child in value:
+                    collect(child, domain_hint, path_hint)
+            except TypeError:
+                return
+
+    collect(raw_cookie_data)
+    return list(cookies_by_key.values())
+
+
+def is_cookie_dict(value: Any) -> bool:
+    """Return whether a value already looks like a browser cookie dict."""
+    return isinstance(value, dict) and "name" in value and "value" in value
+
+
+def is_morsel(value: Any) -> bool:
+    """Return whether a value looks like http.cookies.Morsel."""
+    return hasattr(value, "key") and hasattr(value, "value") and hasattr(value, "__getitem__")
+
+
+def safe_morsel_get(value: Any, key: str) -> str:
+    """Read a Morsel attribute without coupling to its concrete type."""
+    try:
+        result = value[key]
+    except Exception:
+        return ""
+    return str(result or "")
+
+
+def cookie_hints_from_key(key: Any, domain_hint: Any, path_hint: Any) -> tuple[Any, Any]:
+    """Derive domain/path hints from aiohttp CookieJar storage keys."""
+    if isinstance(key, tuple) and len(key) >= 2:
+        return key[0] or domain_hint, key[1] or path_hint
+    if isinstance(key, str) and "amazon." in key.lower():
+        return key, path_hint
+    return domain_hint, path_hint
+
+
+def normalize_cookie_domain(domain_hint: Any, amazon_domain: str) -> str:
+    """Normalize and restrict cookies to Amazon domains."""
+    domain = str(domain_hint or "").strip().lower()
+    domain = re.sub(r"^https?://", "", domain)
+    domain = domain.split("/", 1)[0]
+    if not domain:
+        domain = f".{amazon_domain}"
+    if "amazon." not in domain:
+        return ""
+    return domain
+
+
+def parse_cookie_expiry(value: Any) -> int | None:
+    """Parse cookie expiry values accepted by Selenium."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, (int, float)):
+        return int(value)
+
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.isdigit():
+        return int(text)
+    if text.startswith("-"):
+        return None
+    try:
+        return int(parsedate_to_datetime(text).timestamp())
+    except (TypeError, ValueError, OSError, OverflowError):
+        return None
+
+
+def normalize_same_site(value: Any) -> str | None:
+    """Normalize SameSite to Selenium's accepted values."""
+    text = str(value or "").strip().lower()
+    if text in {"strict", "lax", "none"}:
+        return text.capitalize()
+    return None
 
 
 def parse_int(value: Any, default: int, minimum: int, maximum: int) -> int:
@@ -748,6 +974,14 @@ class ConfigHandler(BaseHTTPRequestHandler):
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
+        if self.path == "/api/alexa/import_amp":
+            try:
+                settings = load_settings()
+                result = import_alexa_media_session(settings["amazon_domain"])
+                self.send_json({"ok": True, "result": result})
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
         if self.path == "/api/setup/start":
             try:
                 settings = load_settings()
@@ -813,6 +1047,7 @@ class ConfigHandler(BaseHTTPRequestHandler):
             "suggested_ha_list": suggest_todo_entity(entities),
             "status": self.runtime.last_result,
             "alexa_cookies_present": ALEXA_COOKIES_PATH.exists(),
+            "alexa_media_session_available": bool(find_alexa_media_session_files()),
             "entity_error": entity_error,
         }
 
@@ -1427,12 +1662,14 @@ INDEX_HTML = r"""<!doctype html>
       <div class="internal-alexa-field">
         <label>Amazon-Session</label>
         <div class="actions">
+          <button id="import-amp" type="button">Aus Alexa Media Player uebernehmen</button>
           <button id="setup-start" type="button">Amazon-Anmeldung oeffnen</button>
           <button id="setup-save" type="button">Session uebernehmen</button>
           <button id="setup-stop" type="button">Browser schliessen</button>
           <button id="check-alexa" type="button">Amazon-Session pruefen</button>
         </div>
-        <p class="setup-hint">Nach dem Oeffnen in die Browseransicht klicken und normal anmelden. Wenn Amazon die Startseite zeigt, oben Konto/Anmelden waehlen. Enter, Tab und Backspace werden uebertragen. Danach Session uebernehmen.</p>
+        <p id="amp-status" class="setup-hint"></p>
+        <p class="setup-hint">Am einfachsten ist die Uebernahme aus Alexa Media Player. Falls dort keine Session gefunden wird: Amazon-Anmeldung oeffnen, in die Browseransicht klicken und normal anmelden. Danach Session uebernehmen.</p>
         <div id="setup-browser" class="setup-browser">
           <img id="setup-screenshot" alt="Amazon Login Browser">
         </div>
@@ -1480,6 +1717,7 @@ INDEX_HTML = r"""<!doctype html>
     const cookies = document.getElementById("cookies");
     const setupBrowser = document.getElementById("setup-browser");
     const setupScreenshot = document.getElementById("setup-screenshot");
+    const ampStatus = document.getElementById("amp-status");
     const modeInputs = [...document.querySelectorAll('input[name="mode"]')];
     let setupFocused = false;
     let setupSize = {width: 1366, height: 768};
@@ -1545,6 +1783,9 @@ INDEX_HTML = r"""<!doctype html>
       interval.value = settings.interval_seconds;
       syncCompleted.checked = settings.sync_completed;
       removeCompleted.checked = settings.remove_completed;
+      ampStatus.textContent = data.alexa_media_session_available
+        ? "Alexa-Media-Player-Session gefunden."
+        : "Keine Alexa-Media-Player-Session gefunden. Der Login-Browser bleibt als Fallback verfuegbar.";
       applyModeVisibility();
       renderStatus(data.status);
       if (data.entity_error) setMessage(data.entity_error, "error");
@@ -1594,6 +1835,18 @@ INDEX_HTML = r"""<!doctype html>
       });
       const data = await res.json();
       setMessage(data.ok ? "Cookies importiert." : data.error, data.ok ? "ok" : "error");
+    });
+
+    document.getElementById("import-amp").addEventListener("click", async () => {
+      setMessage("Uebernehme Session aus Alexa Media Player...");
+      const res = await fetch("api/alexa/import_amp", {method: "POST"});
+      const data = await res.json();
+      if (!data.ok) {
+        setMessage(data.error || "Uebernahme fehlgeschlagen", "error");
+        return;
+      }
+      setMessage(`Session uebernommen (${data.result.cookie_count} Cookies aus ${data.result.source}).`, "ok");
+      await loadConfig();
     });
 
     function renderSetupScreenshot(payload) {

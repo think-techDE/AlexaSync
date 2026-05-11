@@ -3,6 +3,10 @@
 Home-Assistant-Add-on-Repository fuer die Synchronisation der Alexa-
 Einkaufsliste mit einer Home-Assistant-`todo`-Liste, zum Beispiel Bring.
 
+Seit Version `0.7.0` kann das Add-on eine vorhandene Alexa-Media-Player-
+Session aus Home Assistant uebernehmen. Damit ist im Normalfall keine zweite
+Amazon-Anmeldung noetig.
+
 Seit Version `0.6.0` bringt das Add-on den Alexa-Workaround direkt mit:
 Chromium/Selenium laeuft im Add-on und liest die Alexa-Einkaufsliste mit
 importierten Amazon-Session-Cookies. Das basiert auf dem technischen Ansatz von
@@ -21,8 +25,10 @@ aber ohne separates Server-Add-on.
 5. Add-on starten und die **Weboberflaeche** oeffnen.
 6. Sync-Modus **Alexa direkt - Home Assistant Liste** waehlen.
 7. Amazon-Domain, z.B. `amazon.de`, und die Bring-/Ziel-Liste auswaehlen.
-8. **Amazon-Anmeldung oeffnen**, im eingeblendeten Amazon-Browser anmelden und
-   danach **Session uebernehmen**.
+8. Falls Alexa Media Player bereits eingerichtet ist:
+   **Aus Alexa Media Player uebernehmen** klicken.
+9. Sonst **Amazon-Anmeldung oeffnen**, im eingeblendeten Amazon-Browser anmelden
+   und danach **Session uebernehmen**.
 
 Die YAML-Konfiguration bleibt optional als Fallback moeglich:
 
@@ -41,4 +47,6 @@ log_level: info
 Der eigentliche Add-on-Code liegt in [`alexa_sync`](alexa_sync).
 
 Das Add-on nutzt den Home-Assistant-Core-API-Proxy des Supervisors. Dafuer ist
-in `alexa_sync/config.yaml` `homeassistant_api: true` gesetzt.
+in `alexa_sync/config.yaml` `homeassistant_api: true` gesetzt. Fuer den Import
+aus Alexa Media Player wird die Home-Assistant-Konfiguration zusaetzlich
+read-only unter `/homeassistant` eingebunden.
