@@ -293,6 +293,63 @@ def read_cookie_count(path: Path) -> int:
     return len(cookies) if isinstance(cookies, list) else 0
 
 
+def identity_keys_from_text(value: Any) -> set[str]:
+    """Return normalized identity keys for Alexa Media Player account labels."""
+    text = str(value or "").strip().casefold()
+    if not text:
+        return set()
+    text = re.sub(r"\s+", " ", text)
+    keys = {text}
+    if " - " in text:
+        keys.add(text.split(" - ", 1)[0].strip())
+    for email in re.findall(r"[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}", text):
+        keys.add(email)
+    return {key for key in keys if key}
+
+
+def alexa_media_session_identity_keys(path: Path) -> set[str]:
+    """Return identity keys for an Alexa Media Player session file."""
+    return identity_keys_from_text(alexa_media_session_label(path))
+
+
+def preferred_identity_key(keys: set[str], fallback: str) -> str:
+    """Pick a stable identity key, preferring email addresses."""
+    emails = sorted(key for key in keys if "@" in key)
+    if emails:
+        return emails[0]
+    if keys:
+        return sorted(keys)[0]
+    return fallback.casefold()
+
+
+def active_alexa_media_identities() -> set[str]:
+    """Return identities from active Alexa Media Player config entries."""
+    identities: set[str] = set()
+    for base_path in HA_CONFIG_PATHS:
+        entries_path = base_path / ".storage" / "core.config_entries"
+        if not entries_path.exists():
+            continue
+        try:
+            with entries_path.open("r", encoding="utf-8") as entries_file:
+                data = json.load(entries_file)
+        except (OSError, json.JSONDecodeError):
+            LOGGER.debug("Could not read %s", entries_path, exc_info=True)
+            continue
+        entries = data.get("data", {}).get("entries", [])
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if not isinstance(entry, dict) or entry.get("domain") != "alexa_media":
+                continue
+            if entry.get("disabled_by"):
+                continue
+            identities.update(identity_keys_from_text(entry.get("title")))
+            entry_data = entry.get("data") if isinstance(entry.get("data"), dict) else {}
+            for key in ("email", "username", "account", "account_email"):
+                identities.update(identity_keys_from_text(entry_data.get(key)))
+    return identities
+
+
 def find_alexa_media_session_files() -> list[Path]:
     """Find Alexa Media Player cookie jars in the mounted HA config directory."""
     found: list[Path] = []
@@ -310,7 +367,20 @@ def find_alexa_media_session_files() -> list[Path]:
                         seen.add(candidate)
             except OSError:
                 LOGGER.debug("Could not scan %s", storage_path, exc_info=True)
-    return sorted(found, key=lambda path: safe_mtime(path), reverse=True)
+
+    active_identities = active_alexa_media_identities()
+    filtered: list[Path] = []
+    deduped_identities: set[str] = set()
+    for candidate in sorted(found, key=lambda path: safe_mtime(path), reverse=True):
+        session_keys = alexa_media_session_identity_keys(candidate)
+        if active_identities and not (session_keys & active_identities):
+            continue
+        identity_key = preferred_identity_key(session_keys, candidate.stem)
+        if identity_key in deduped_identities:
+            continue
+        deduped_identities.add(identity_key)
+        filtered.append(candidate)
+    return filtered
 
 
 def safe_mtime(path: Path) -> float:
@@ -936,9 +1006,10 @@ class AlexaServerClient:
         """Add an item to Alexa."""
         self.command("add_item", {"item": item.summary})
 
-    def remove_item(self, item: TodoItem) -> None:
+    def remove_item(self, item: TodoItem) -> bool:
         """Remove an item from Alexa."""
         self.command("remove_item", {"item": item.summary})
+        return True
 
 
 class InternalAlexaClient:
@@ -1103,25 +1174,54 @@ class InternalAlexaClient:
         header.find_element(By.CLASS_NAME, "add-to-list").find_element(By.TAG_NAME, "button").click()
         time.sleep(1)
 
-    def remove_item(self, item: TodoItem) -> None:
+    def remove_item(self, item: TodoItem) -> bool:
         """Remove an item from Alexa active list."""
+        from selenium.common.exceptions import (
+            ElementClickInterceptedException,
+            NoSuchElementException,
+            StaleElementReferenceException,
+        )
+
+        last_error: Exception | None = None
+        for attempt in range(1, 4):
+            try:
+                return self._remove_item_once(item)
+            except (StaleElementReferenceException, NoSuchElementException, ElementClickInterceptedException) as exc:
+                last_error = exc
+                LOGGER.debug("Retrying Alexa remove for '%s' after DOM change", item.summary, exc_info=True)
+                time.sleep(attempt)
+        LOGGER.warning("Could not remove '%s' from Alexa after retries: %s", item.summary, last_error)
+        return False
+
+    def _remove_item_once(self, item: TodoItem) -> bool:
+        """Remove an item once, returning whether a row was clicked."""
         from selenium.webdriver.common.by import By
+        from selenium.common.exceptions import ElementClickInterceptedException, NoSuchElementException
 
         if self.driver is None:
             raise RuntimeError("Browser is not running")
         self._open_list()
-        list_container = self.driver.find_element(By.CLASS_NAME, "virtual-list")
         last_text = None
         stable_rounds = 0
 
         while stable_rounds < 2:
+            list_container = self.driver.find_element(By.CLASS_NAME, "virtual-list")
             rows = list_container.find_elements(By.CLASS_NAME, "inner")
             for row in rows:
-                title = row.find_element(By.CLASS_NAME, "item-title").get_attribute("innerText").strip()
+                try:
+                    title = row.find_element(By.CLASS_NAME, "item-title").get_attribute("innerText").strip()
+                except NoSuchElementException:
+                    continue
                 if normalize_summary(title) == normalize_summary(item.summary):
-                    row.find_element(By.CLASS_NAME, "item-actions-2").find_element(By.TAG_NAME, "button").click()
+                    button = row.find_element(By.CLASS_NAME, "item-actions-2").find_element(By.TAG_NAME, "button")
+                    self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", button)
+                    time.sleep(0.2)
+                    try:
+                        button.click()
+                    except ElementClickInterceptedException:
+                        self.driver.execute_script("arguments[0].click();", button)
                     time.sleep(1)
-                    return
+                    return True
 
             current_last = rows[-1].text if rows else None
             if current_last == last_text:
@@ -1133,6 +1233,7 @@ class InternalAlexaClient:
             if rows:
                 self.driver.execute_script("arguments[0].scrollIntoView();", rows[-1])
             time.sleep(1)
+        return False
 
 
 def resolve_account_from_payload(settings: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
@@ -1691,8 +1792,9 @@ def sync_alexa_items_with_ha(
             and ha_item.status == STATUS_COMPLETED
         ):
             LOGGER.info("Removing completed '%s' from Alexa", ha_item.summary)
-            alexa.remove_item(alexa_item)
-            writes += 1
+            removed = alexa.remove_item(alexa_item)
+            if removed is not False:
+                writes += 1
 
         remember(item_state, alexa_item, ha_item)
 

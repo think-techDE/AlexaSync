@@ -31,7 +31,9 @@ Wenn Alexa Media Player bereits laeuft, kann das Add-on dessen Session aus
 `/homeassistant/.storage/alexa_media*.pickle` uebernehmen. Wenn mehrere Dateien
 vorhanden sind, legt das Add-on nur fuer die in der Weboberflaeche markierten
 Sessions Amazon-Konten an. Die Home-Assistant-Konfiguration wird dafuer nur
-read-only eingebunden. Falls keine passende Session vorhanden ist, oeffnet die
+read-only eingebunden. Angezeigt werden nur Sessions, die zu aktiven Alexa-
+Media-Player-Config-Entries passen; doppelte Cookie-Dateien derselben Mailadresse
+werden zusammengefasst. Falls keine passende Session vorhanden ist, oeffnet die
 Weboberflaeche pro Konto einen internen Amazon-Browser; nach erfolgreicher
 Anmeldung werden nur die Browser-Cookies persistiert.
 

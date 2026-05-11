@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.2
+
+- Alexa-Entfernen ist robuster gegen Amazon-DOM-Refreshes und retryt stale Selenium-Elemente.
+- Alexa-Media-Player-Sessionauswahl wird gegen aktive Alexa-Media-Player-Config-Entries gefiltert.
+- Doppelte Alexa-Media-Player-Sessiondateien fuer dieselbe Mailadresse werden nur noch einmal angeboten.
+
 ## 0.8.1
 
 - Alexa-Media-Player-Import uebernimmt nur noch explizit ausgewaehlte Sessions.

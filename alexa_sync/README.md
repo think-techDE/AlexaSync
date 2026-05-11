@@ -54,7 +54,10 @@ gewuenschte Alexa-Media-Player-Sessions zu markieren und **Ausgewaehlte aus
 Alexa Media Player uebernehmen** zu klicken. Dafuer liest das Add-on nur die
 ausgewaehlten Alexa-Media-Player-Cookie-Dateien aus der Home-Assistant-
 Konfiguration und legt je Datei ein Amazon-Konto an. Der Zugriff auf die
-Home-Assistant-Konfiguration ist read-only.
+Home-Assistant-Konfiguration ist read-only. Alte Cookie-Dateien werden
+ausgeblendet, wenn sie keinem aktiven Alexa-Media-Player-Config-Entry mehr
+zugeordnet werden koennen; doppelte Dateien derselben Mailadresse erscheinen nur
+einmal.
 
 Falls keine Alexa-Media-Player-Session gefunden wird, kann die Weboberflaeche
 pro Konto einen internen Amazon-Browser oeffnen. Nach der Anmeldung werden nur
