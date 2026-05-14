@@ -1,51 +1,76 @@
 # Alexa Sync
 
-Home-Assistant-Add-on-Repository fuer die Synchronisation von Alexa-
-Einkaufslisten mit einer Home-Assistant-`todo`-Liste, typischerweise Bring.
+[![Version](https://img.shields.io/badge/version-0.9.8-blue.svg)](alexa_sync/CHANGELOG.md)
+[![Architektur](https://img.shields.io/badge/arch-amd64%20%7C%20aarch64-lightgrey.svg)](alexa_sync/build.yaml)
+[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-Add--on-41BDF5.svg?logo=home-assistant)](https://www.home-assistant.io/addons/)
 
-Alexa Sync nutzt vorhandene Sessions aus
-[Alexa Media Player](https://github.com/alandtse/alexa_media_player). Es werden
-keine Amazon-Zugangsdaten im Add-on gespeichert.
+Home-Assistant-Add-on-Repository zur Synchronisation von Alexa-Einkaufslisten mit einer Home-Assistant-`todo`-Liste (z.B. Bring).
+
+```
+Alexa-Liste ──┐
+              ├──► Alexa Sync ──► HA todo-Liste (z.B. Bring)
+Alexa-Liste ──┘         ▲
+                         │ Session-Cookies
+                   Alexa Media Player
+```
+
+Alexa Sync nutzt vorhandene Sessions aus [Alexa Media Player](https://github.com/alandtse/alexa_media_player) — es werden **keine Amazon-Zugangsdaten** im Add-on gespeichert.
+
+---
 
 ## Was das Add-on macht
 
-- Importiert Alexa-Media-Player-Sessions aus der Home-Assistant-Konfiguration.
-- Legt daraus automatisch Amazon-Konten im Add-on an.
-- Synchronisiert mehrere Alexa-Einkaufslisten mit einer gemeinsamen
-  Home-Assistant-`todo`-Liste.
-- Kopiert neue Alexa-Eintraege in die Ziel-Liste.
-- Schreibt neue Ziel-Listen-Eintraege in alle aktiven Alexa-Listen.
-- Entfernt in der Ziel-Liste erledigte Eintraege aus den Alexa-Listen.
+| Richtung | Aktion |
+|---|---|
+| Alexa → HA | Neue Einträge aus Alexa-Listen importieren |
+| HA → Alexa | Neue HA-Einträge in alle aktiven Alexa-Listen schreiben |
+| HA → Alexa | Erledigte HA-Einträge aus Alexa-Listen entfernen |
+| Mehrere Konten | Mehrere Amazon-Konten parallel synchronisieren |
+
+Alexa Media Player-Sessions werden beim Start automatisch erkannt und als Amazon-Konten angelegt.
+
+---
 
 ## Voraussetzungen
 
-- Home Assistant mit Add-on-Unterstuetzung.
-- Eine vorhandene Home-Assistant-`todo`-Liste, z.B. Bring.
-- Eingerichteter Alexa Media Player mit gueltiger Amazon-Session.
-- Add-on-Architektur `amd64` oder `aarch64`.
+- [ ] Home Assistant mit Add-on-Unterstützung
+- [ ] Eingerichteter [Alexa Media Player](https://github.com/alandtse/alexa_media_player) mit gültiger Amazon-Session
+- [ ] Eine vorhandene Home-Assistant-`todo`-Liste (z.B. Bring)
+- [ ] Architektur `amd64` oder `aarch64`
+
+---
 
 ## Installation
 
-1. In Home Assistant **Einstellungen > Add-ons > Add-on Store** oeffnen.
-2. Im Drei-Punkte-Menue **Repositories** waehlen.
-3. Dieses Repository hinzufuegen:
+1. In Home Assistant **Einstellungen → Add-ons → Add-on Store** öffnen.
+2. Im Drei-Punkte-Menü **Repositories** wählen.
+3. Dieses Repository hinzufügen:
 
-   ```text
+   ```
    https://github.com/think-techDE/AlexaSync
    ```
 
-4. **Alexa Sync** installieren.
-5. Add-on starten und die **Weboberflaeche** oeffnen.
-6. Amazon-Domain, z.B. `amazon.de`, und die Bring-/Ziel-Liste auswaehlen.
-7. **Sessions uebernehmen** klicken.
+4. **Alexa Sync** suchen und installieren.
+5. Add-on starten und die **Weboberfläche** öffnen.
+6. Amazon-Domain (z.B. `amazon.de`) und die Ziel-Liste auswählen.
+7. **Sessions übernehmen** klicken.
 
-Beim erneuten Uebernehmen ersetzt die aktuelle Auswahl die importierten Konten.
-Nicht mehr gewuenschte Konten koennen in der Weboberflaeche entfernt werden.
+> Beim erneuten Übernehmen ersetzt die aktuelle Auswahl die importierten Konten. Nicht mehr gewünschte Konten können in der Weboberfläche entfernt werden.
+
+---
 
 ## Konfiguration
 
-Die Weboberflaeche ist der normale Weg. Die YAML-Optionen bleiben als Startwerte
-moeglich:
+Die Weboberfläche ist der empfohlene Weg. Alle Optionen lassen sich alternativ auch per YAML setzen:
+
+| Option | Standard | Beschreibung |
+|---|---|---|
+| `amazon_domain` | `amazon.de` | Amazon-Domain des Kontos |
+| `ha_list` | _(leer)_ | Entity-ID der Ziel-`todo`-Liste |
+| `interval_seconds` | `120` | Sync-Intervall in Sekunden |
+| `sync_completed` | `true` | Erledigte Alexa-Einträge in HA übernehmen |
+| `remove_completed` | `false` | Erledigte HA-Einträge aus Alexa entfernen |
+| `log_level` | `info` | Log-Level (`debug`, `info`, `warning`, `error`) |
 
 ```yaml
 amazon_domain: amazon.de
@@ -56,17 +81,19 @@ remove_completed: false
 log_level: info
 ```
 
+---
+
 ## Dokumentation
 
-- Add-on-Dokumentation: [`alexa_sync/DOCS.md`](alexa_sync/DOCS.md)
-- Add-on-Verzeichnis: [`alexa_sync`](alexa_sync)
+- Ausführliche Dokumentation: [`alexa_sync/DOCS.md`](alexa_sync/DOCS.md)
 - Changelog: [`alexa_sync/CHANGELOG.md`](alexa_sync/CHANGELOG.md)
+- Add-on-Verzeichnis: [`alexa_sync/`](alexa_sync)
+
+---
 
 ## Hinweise
 
-Amazon stellt keine offizielle stabile API fuer Alexa-Einkaufslisten bereit.
-Alexa Sync oeffnet die Alexa-Einkaufsliste deshalb intern per Chromium/Selenium
-und nutzt die importierten Session-Cookies aus Alexa Media Player.
-
-Wenn Amazon eine Session beendet, muss sie in Alexa Media Player erneuert und im
-Add-on erneut uebernommen werden.
+> [!NOTE]
+> Amazon stellt keine offizielle stabile API für Alexa-Einkaufslisten bereit. Alexa Sync öffnet die Einkaufsliste deshalb intern per Chromium/Selenium und nutzt die importierten Session-Cookies aus Alexa Media Player.
+>
+> Wenn Amazon eine Session beendet, muss sie in Alexa Media Player erneuert und im Add-on erneut übernommen werden.
