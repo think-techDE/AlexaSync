@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.2
+
+- Sidebar-Icon auf das breit verfuegbare Home-Assistant-MDI-Icon `mdi:cart` umgestellt.
+
 ## 0.9.1
 
 - Add-on-Grafiken `icon.png` und `logo.png` fuer die Home-Assistant-Darstellung hinzugefuegt.
