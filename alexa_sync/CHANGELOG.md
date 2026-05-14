@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.1
+
+- Add-on-Grafiken `icon.png` und `logo.png` fuer die Home-Assistant-Darstellung hinzugefuegt.
+
 ## 0.9.0
 
 - Backend in getrennte Module fuer Einstellungen, Home Assistant, Alexa-Client, Sync-Logik und Weboberflaeche aufgeteilt.
