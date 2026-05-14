@@ -49,7 +49,7 @@ DEFAULT_SETTINGS = {
 }
 
 LOGGER = logging.getLogger("alexa_sync")
-STOP_REQUESTED = False
+STOP_EVENT = threading.Event()
 
 
 @dataclass
@@ -199,8 +199,7 @@ class RuntimeState:
 
 def handle_stop(_signum: int, _frame: Any) -> None:
     """Request clean shutdown."""
-    global STOP_REQUESTED
-    STOP_REQUESTED = True
+    STOP_EVENT.set()
 
 
 def setup_logging(level: str) -> None:
@@ -1895,7 +1894,7 @@ def main() -> int:
 
     LOGGER.info("Alexa Sync started")
 
-    while not STOP_REQUESTED:
+    while not STOP_EVENT.is_set():
         settings = load_settings()
         if is_configured(settings):
             LOGGER.debug("Running sync in %s mode", settings["mode"])
@@ -1904,7 +1903,7 @@ def main() -> int:
             LOGGER.info("Waiting for configuration in the add-on web UI")
 
         sleep_until = time.monotonic() + settings["interval_seconds"]
-        while not STOP_REQUESTED and time.monotonic() < sleep_until:
+        while not STOP_EVENT.is_set() and time.monotonic() < sleep_until:
             time.sleep(min(1, sleep_until - time.monotonic()))
 
     runtime.close_setup_browser()
