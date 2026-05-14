@@ -146,7 +146,7 @@ class WebHandler(BaseHTTPRequestHandler):
                 payload = self.read_json()
                 sources = payload.get("sources")
                 if sources is not None and not isinstance(sources, list):
-                    raise ValueError("Alexa-Media-Player-Sessions muessen als Liste uebergeben werden.")
+                    raise ValueError("Alexa Media Player sessions must be provided as a list.")
                 settings = load_settings_from_payload(payload)
                 result = import_selected_alexa_media_sessions(settings, sources)
                 self.send_json({"ok": True, "result": result, "settings": result.get("settings")})
