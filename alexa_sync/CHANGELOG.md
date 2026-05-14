@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.3
+
+- Weboberflaeche grundlegend neu aufgebaut und auf die benoetigten Kernfunktionen reduziert.
+- Alexa-Media-Player-Sessions werden uebersichtlicher dargestellt; nicht importierbare Konten erscheinen nur noch als Hinweis.
+- Amazon-Konten, Login-Fallback, Cookie-Expertenimport, Sync-Verhalten und Status wurden klar getrennt.
+
 ## 0.9.2
 
 - Sidebar-Icon auf das breit verfuegbare Home-Assistant-MDI-Icon `mdi:cart` umgestellt.
