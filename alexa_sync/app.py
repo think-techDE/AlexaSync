@@ -194,7 +194,12 @@ class RuntimeState:
         if not cookies:
             raise RuntimeError("Keine Cookies im Setup-Browser gefunden.")
         save_cookie_list(cookies, account_cookie_path(self.setup_account["id"]))
-        return {"saved": True, "cookie_count": len(cookies), "account_id": self.setup_account["id"]}
+        return {
+            "saved": True,
+            "cookie_count": len(cookies),
+            "account_id": self.setup_account["id"],
+            "account": self.setup_account,
+        }
 
 
 def handle_stop(_signum: int, _frame: Any) -> None:
@@ -775,6 +780,37 @@ def normalize_amazon_accounts(raw_accounts: Any, legacy_domain: str) -> list[dic
 def enabled_amazon_accounts(settings: dict[str, Any]) -> list[dict[str, Any]]:
     """Return enabled Amazon accounts from settings."""
     return [account for account in settings.get("amazon_accounts", []) if account.get("enabled", True)]
+
+
+def persist_amazon_account(settings: dict[str, Any], account: dict[str, Any]) -> dict[str, Any]:
+    """Persist one Amazon account without requiring the whole form to be saved first."""
+    normalized_account = normalize_amazon_accounts([account], settings["amazon_domain"])[0]
+    normalized_account["enabled"] = True
+    accounts = [dict(item) for item in settings.get("amazon_accounts", []) if isinstance(item, dict)]
+    if (
+        len(accounts) == 1
+        and accounts[0].get("id") == DEFAULT_ACCOUNT_ID
+        and normalized_account["id"] != DEFAULT_ACCOUNT_ID
+        and not account_cookie_path(DEFAULT_ACCOUNT_ID).exists()
+    ):
+        accounts = []
+
+    updated = False
+    for index, existing in enumerate(accounts):
+        if sanitize_account_id(existing.get("id")) == normalized_account["id"]:
+            merged = dict(existing)
+            merged.update(normalized_account)
+            accounts[index] = merged
+            updated = True
+            break
+    if not updated:
+        accounts.append(normalized_account)
+
+    next_settings = dict(settings)
+    next_settings["amazon_accounts"] = accounts
+    normalized = normalize_settings(next_settings)
+    write_json_file(SETTINGS_PATH, normalized)
+    return normalized
 
 
 def load_options() -> dict[str, Any]:
@@ -1384,7 +1420,8 @@ class ConfigHandler(BaseHTTPRequestHandler):
                 if not isinstance(cookies, list):
                     raise ValueError("Cookies muessen als JSON-Liste uebergeben werden.")
                 save_cookie_list(cookies, account_cookie_path(account["id"]))
-                self.send_json({"ok": True})
+                settings = persist_amazon_account(settings, account)
+                self.send_json({"ok": True, "settings": settings})
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
@@ -1407,7 +1444,8 @@ class ConfigHandler(BaseHTTPRequestHandler):
                     account_id=account["id"],
                     source_name=payload.get("source") or None,
                 )
-                self.send_json({"ok": True, "result": result})
+                settings = persist_amazon_account(settings, account)
+                self.send_json({"ok": True, "result": result, "settings": settings})
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
@@ -1461,7 +1499,10 @@ class ConfigHandler(BaseHTTPRequestHandler):
         if self.path == "/api/setup/save":
             try:
                 result = self.runtime.save_setup_cookies()
-                self.send_json({"ok": True, "result": result})
+                settings = load_settings()
+                if isinstance(result.get("account"), dict):
+                    settings = persist_amazon_account(settings, result["account"])
+                self.send_json({"ok": True, "result": result, "settings": settings})
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
@@ -1999,6 +2040,39 @@ INDEX_HTML = r"""<!doctype html>
       padding: 20px;
       margin-bottom: 16px;
     }
+    .module {
+      border-top: 1px solid var(--border);
+      padding: 22px 0;
+    }
+    .module:first-child {
+      border-top: 0;
+      padding-top: 0;
+    }
+    .module-header {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .module-header h2 {
+      font-size: 18px;
+      line-height: 1.2;
+      margin: 0 0 4px;
+    }
+    .module-header p {
+      font-size: 13px;
+      margin: 0;
+    }
+    .step {
+      align-items: center;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      display: inline-flex;
+      flex: 0 0 auto;
+      font-weight: 700;
+      height: 28px;
+      justify-content: center;
+      width: 28px;
+    }
     .grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2032,6 +2106,9 @@ INDEX_HTML = r"""<!doctype html>
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 14px;
+    }
+    .account-card.warning {
+      border-color: var(--danger);
     }
     .account-grid {
       display: grid;
@@ -2126,6 +2203,9 @@ INDEX_HTML = r"""<!doctype html>
       flex-wrap: wrap;
       margin-top: 20px;
     }
+    .module-actions {
+      margin-top: 12px;
+    }
     button {
       min-height: 42px;
       border: 1px solid var(--border);
@@ -2169,87 +2249,126 @@ INDEX_HTML = r"""<!doctype html>
     <p>Alexa per Sprache befuellen, in Bring abhaken. Waehle deine Bring-Liste und verbinde ein oder mehrere Amazon-Konten.</p>
 
     <form id="config-form">
-      <div class="mode-row">
-        <label class="radio">
-          <input type="radio" name="mode" value="internal_alexa">
-          <span><strong>Alexa direkt mit Bring synchronisieren</strong><br>Empfohlen. Ein Add-on, keine zweite Server-Komponente.</span>
-        </label>
-      </div>
-      <details>
-        <summary>Erweiterte Modi</summary>
+      <section class="module">
+        <div class="module-header">
+          <span class="step">1</span>
+          <div>
+            <h2>Ziel & Modus</h2>
+            <p>Im Standardfall reicht die Bring-/Ziel-Liste. Erweiterte Modi bleiben fuer Spezialfaelle verfuegbar.</p>
+          </div>
+        </div>
         <div class="mode-row">
           <label class="radio">
-            <input type="radio" name="mode" value="ha_todo_pair">
-            <span><strong>Home Assistant Liste - Home Assistant Liste</strong><br>Fuer Bring, lokale Listen oder andere vorhandene `todo.*`-Entities.</span>
-          </label>
-          <label class="radio">
-            <input type="radio" name="mode" value="alexa_server">
-            <span><strong>Externer Alexa Shopping List Server - Home Assistant Liste</strong><br>Kompatibilitaetsmodus fuer bestehende Installationen.</span>
+            <input type="radio" name="mode" value="internal_alexa">
+            <span><strong>Alexa direkt mit Bring synchronisieren</strong><br>Empfohlen. Ein Add-on, keine zweite Server-Komponente.</span>
           </label>
         </div>
-      </details>
-      <div class="grid">
-        <div class="internal-alexa-field">
-          <label for="amazon-domain">Standard-Domain fuer neue Konten</label>
-          <input id="amazon-domain" name="amazon_domain" type="text" placeholder="amazon.de">
+        <details>
+          <summary>Erweiterte Modi</summary>
+          <div class="mode-row">
+            <label class="radio">
+              <input type="radio" name="mode" value="ha_todo_pair">
+              <span><strong>Home Assistant Liste - Home Assistant Liste</strong><br>Fuer Bring, lokale Listen oder andere vorhandene `todo.*`-Entities.</span>
+            </label>
+            <label class="radio">
+              <input type="radio" name="mode" value="alexa_server">
+              <span><strong>Externer Alexa Shopping List Server - Home Assistant Liste</strong><br>Kompatibilitaetsmodus fuer bestehende Installationen.</span>
+            </label>
+          </div>
+        </details>
+        <div class="grid">
+          <div class="internal-alexa-field">
+            <label for="amazon-domain">Standard-Domain fuer neue Konten</label>
+            <input id="amazon-domain" name="amazon_domain" type="text" placeholder="amazon.de">
+          </div>
+          <div class="internal-alexa-field">
+            <label for="internal-ha-list">Bring-/Ziel-Liste</label>
+            <select id="internal-ha-list" name="internal_ha_list"></select>
+          </div>
+          <div class="ha-pair-field">
+            <label for="list-a">Liste A</label>
+            <select id="list-a" name="list_a"></select>
+          </div>
+          <div class="ha-pair-field">
+            <label for="list-b">Liste B</label>
+            <select id="list-b" name="list_b"></select>
+          </div>
+          <div class="alexa-field">
+            <label for="alexa-host">Alexa-Server Host/IP</label>
+            <input id="alexa-host" name="alexa_server_host" type="text" placeholder="192.168.1.10">
+          </div>
+          <div class="alexa-field">
+            <label for="alexa-port">Alexa-Server Port</label>
+            <input id="alexa-port" name="alexa_server_port" type="number" min="1" max="65535" step="1">
+          </div>
+          <div class="alexa-field">
+            <label for="ha-list">Home-Assistant-Liste</label>
+            <select id="ha-list" name="ha_list"></select>
+          </div>
+          <div>
+            <label for="interval">Sync-Intervall in Sekunden</label>
+            <input id="interval" name="interval_seconds" type="number" min="10" max="3600" step="5">
+          </div>
         </div>
-        <div class="internal-alexa-field">
-          <label for="internal-ha-list">Bring-/Ziel-Liste</label>
-          <select id="internal-ha-list" name="internal_ha_list"></select>
+      </section>
+
+      <section class="module internal-alexa-field">
+        <div class="module-header">
+          <span class="step">2</span>
+          <div>
+            <h2>Alexa Media Player</h2>
+            <p>Markiere nur die Sessions, die wirklich mit Bring synchronisiert werden sollen.</p>
+          </div>
         </div>
-        <div class="ha-pair-field">
-          <label for="list-a">Liste A</label>
-          <select id="list-a" name="list_a"></select>
-        </div>
-        <div class="ha-pair-field">
-          <label for="list-b">Liste B</label>
-          <select id="list-b" name="list_b"></select>
-        </div>
-        <div class="alexa-field">
-          <label for="alexa-host">Alexa-Server Host/IP</label>
-          <input id="alexa-host" name="alexa_server_host" type="text" placeholder="192.168.1.10">
-        </div>
-        <div class="alexa-field">
-          <label for="alexa-port">Alexa-Server Port</label>
-          <input id="alexa-port" name="alexa_server_port" type="number" min="1" max="65535" step="1">
-        </div>
-        <div class="alexa-field">
-          <label for="ha-list">Home-Assistant-Liste</label>
-          <select id="ha-list" name="ha_list"></select>
-        </div>
-        <div>
-          <label for="interval">Sync-Intervall in Sekunden</label>
-          <input id="interval" name="interval_seconds" type="number" min="10" max="3600" step="5">
-        </div>
-      </div>
-      <div class="internal-alexa-field">
-        <label>Amazon-Konten</label>
-        <div class="actions">
+        <p id="amp-status" class="setup-hint"></p>
+        <div id="amp-session-list" class="session-list"></div>
+        <div class="actions module-actions">
           <button id="import-amp-selected" type="button">Ausgewaehlte aus Alexa Media Player uebernehmen</button>
+        </div>
+      </section>
+
+      <section class="module internal-alexa-field">
+        <div class="module-header">
+          <span class="step">3</span>
+          <div>
+            <h2>Amazon-Konten</h2>
+            <p>Nur aktive Konten mit gespeicherter Session werden synchronisiert.</p>
+          </div>
+        </div>
+        <div class="actions module-actions">
           <button id="add-account" type="button">Amazon-Konto hinzufuegen</button>
           <button id="setup-save" type="button">Session uebernehmen</button>
           <button id="setup-stop" type="button">Browser schliessen</button>
         </div>
-        <p id="amp-status" class="setup-hint"></p>
-        <div id="amp-session-list" class="session-list"></div>
         <p class="setup-hint">Jedes aktivierte Amazon-Konto wird mit derselben Bring-/Ziel-Liste synchronisiert. Neue Bring-Eintraege werden in alle aktiven Alexa-Listen geschrieben; erledigte Eintraege werden aus allen aktiven Alexa-Listen entfernt.</p>
         <div id="account-list" class="account-list"></div>
         <div id="setup-browser" class="setup-browser">
           <img id="setup-screenshot" alt="Amazon Login Browser">
         </div>
-      </div>
-      <div class="internal-alexa-field">
-        <label for="cookies">Fallback: Amazon-Session-Cookies als JSON</label>
+      </section>
+
+      <details class="module internal-alexa-field">
+        <summary>Fallback: Amazon-Session-Cookies als JSON importieren</summary>
         <select id="cookie-account"></select>
         <textarea id="cookies" placeholder='[{"name":"session-id","value":"...","domain":".amazon.de"}]'></textarea>
-        <div class="actions">
+        <div class="actions module-actions">
           <button id="save-cookies" type="button">Cookies importieren</button>
         </div>
-      </div>
-      <div class="checks">
-        <label class="check"><input id="sync-completed" name="sync_completed" type="checkbox"> Abgehakte Eintraege synchronisieren</label>
-        <label class="check"><input id="remove-completed" name="remove_completed" type="checkbox"> Abgehakte Eintraege nach dem Sync aus beiden Listen entfernen</label>
-      </div>
+      </details>
+
+      <section class="module">
+        <div class="module-header">
+          <span class="step">4</span>
+          <div>
+            <h2>Sync-Verhalten</h2>
+            <p>Diese Optionen steuern, wie erledigte Artikel behandelt werden.</p>
+          </div>
+        </div>
+        <div class="checks">
+          <label class="check"><input id="sync-completed" name="sync_completed" type="checkbox"> Abgehakte Eintraege synchronisieren</label>
+          <label class="check"><input id="remove-completed" name="remove_completed" type="checkbox"> Abgehakte Eintraege nach dem Sync aus beiden Listen entfernen</label>
+        </div>
+      </section>
       <div class="actions">
         <button class="primary" type="submit">Speichern</button>
         <button id="sync-now" type="button">Jetzt synchronisieren</button>
@@ -2394,11 +2513,13 @@ INDEX_HTML = r"""<!doctype html>
       accountList.replaceChildren();
       for (const account of normalized) {
         const status = statusForAccount(account.id);
+        const isEnabled = account.enabled !== false;
         const statusText = status.cookie_present
           ? `Session gespeichert (${status.cookie_count || 0} Cookies)`
-          : "Noch keine Session gespeichert";
+          : (isEnabled ? "Aktiv, aber ohne Session - Sync wartet auf dieses Konto" : "Inaktiv, noch keine Session gespeichert");
         const card = document.createElement("div");
         card.className = "account-card";
+        if (isEnabled && !status.cookie_present) card.classList.add("warning");
         card.dataset.accountId = account.id || newAccountId();
         const sessionOptions = alexaMediaSessions.filter((session) => session.importable).map((session) => (
           `<option value="${escapeHtml(session.name)}">${escapeHtml(session.label || session.name)}</option>`
@@ -2567,7 +2688,7 @@ INDEX_HTML = r"""<!doctype html>
         id: newAccountId(),
         name: `Amazon Konto ${accounts.length + 1}`,
         amazon_domain: amazonDomain.value || "amazon.de",
-        enabled: true
+        enabled: false
       });
       renderAccounts(accounts);
     });

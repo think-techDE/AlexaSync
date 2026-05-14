@@ -65,3 +65,9 @@ pro Konto einen internen Amazon-Browser oeffnen. Nach der Anmeldung werden nur
 die Browser-Session-Cookies mit restriktiven Dateirechten gespeichert. Wenn
 Amazon die Session beendet, muss die Anmeldung fuer das betroffene Konto erneut
 durchlaufen oder Cookies importiert werden.
+
+Die Weboberflaeche ist in Module gegliedert: Ziel/Modus, Alexa-Media-Player-
+Sessions, Amazon-Konten, Fallback und Sync-Verhalten. Ein Konto wird nach einer
+erfolgreichen Session-Uebernahme automatisch dauerhaft gespeichert. Aktivierte
+Konten ohne Session werden als blockierend markiert, weil sie sonst nicht
+synchronisiert werden koennen.

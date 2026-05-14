@@ -45,6 +45,8 @@ Mehrere Amazon-Konten werden gegen dieselbe `ha_list` synchronisiert:
 - Neue Artikel aus Bring werden in alle aktiven Amazon-Konten geschrieben.
 - Erledigte Bring-Artikel werden aus allen aktiven Alexa-Listen entfernt.
 - Die Sync-Metadaten werden pro Amazon-Konto getrennt gespeichert.
+- Ein Konto wird nach erfolgreicher Session-Uebernahme automatisch gespeichert.
+- Aktivierte Konten ohne Session blockieren den Sync und werden in der Oberflaeche markiert.
 
 Beispiel:
 

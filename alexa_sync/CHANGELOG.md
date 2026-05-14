@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.4
+
+- Weboberflaeche in klare Module fuer Ziel/Modus, Alexa-Media-Player, Amazon-Konten, Fallback und Sync-Verhalten gegliedert.
+- Einzelne Session-Uebernahmen speichern das zugehoerige Amazon-Konto nun automatisch dauerhaft.
+- Neue manuelle Amazon-Konten starten inaktiv, bis eine Session gespeichert wurde.
+- Konten ohne Session werden in der Weboberflaeche klar als blockierend markiert, wenn sie aktiv sind.
+
 ## 0.8.3
 
 - Alexa-Media-Player-Sessions werden nicht mehr unsichtbar gefiltert, sondern als aktiv, ungeprueft oder ohne Cookie-Datei markiert.
