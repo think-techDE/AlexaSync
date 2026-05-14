@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.3
+
+- Alexa-Media-Player-Sessions werden nicht mehr unsichtbar gefiltert, sondern als aktiv, ungeprueft oder ohne Cookie-Datei markiert.
+- Aktive Alexa-Media-Player-Config-Entries ohne importierbare Cookie-Datei werden in der Weboberflaeche sichtbar angezeigt.
+- Die Session-Auswahl und Konto-Zuordnung zeigen nur importierbare Cookie-Dateien als auswaehlbar an.
+
 ## 0.8.2
 
 - Alexa-Entfernen ist robuster gegen Amazon-DOM-Refreshes und retryt stale Selenium-Elemente.

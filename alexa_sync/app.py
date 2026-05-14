@@ -322,9 +322,10 @@ def preferred_identity_key(keys: set[str], fallback: str) -> str:
     return fallback.casefold()
 
 
-def active_alexa_media_identities() -> set[str]:
-    """Return identities from active Alexa Media Player config entries."""
-    identities: set[str] = set()
+def alexa_media_config_entries() -> list[dict[str, Any]]:
+    """Return Alexa Media Player config entries from Home Assistant storage."""
+    config_entries: list[dict[str, Any]] = []
+    seen_entries: set[str] = set()
     for base_path in HA_CONFIG_PATHS:
         entries_path = base_path / ".storage" / "core.config_entries"
         if not entries_path.exists():
@@ -341,17 +342,37 @@ def active_alexa_media_identities() -> set[str]:
         for entry in entries:
             if not isinstance(entry, dict) or entry.get("domain") != "alexa_media":
                 continue
-            if entry.get("disabled_by"):
+            entry_id = str(entry.get("entry_id") or entry.get("title") or "")
+            if entry_id in seen_entries:
                 continue
-            identities.update(identity_keys_from_text(entry.get("title")))
+            seen_entries.add(entry_id)
+
+            identities = identity_keys_from_text(entry.get("title"))
             entry_data = entry.get("data") if isinstance(entry.get("data"), dict) else {}
             for key in ("email", "username", "account", "account_email"):
                 identities.update(identity_keys_from_text(entry_data.get(key)))
+            config_entries.append(
+                {
+                    "entry_id": entry_id,
+                    "title": str(entry.get("title") or "Alexa Media Player"),
+                    "disabled": bool(entry.get("disabled_by")),
+                    "identities": sorted(identities),
+                }
+            )
+    return config_entries
+
+
+def active_alexa_media_identities() -> set[str]:
+    """Return identities from active Alexa Media Player config entries."""
+    identities: set[str] = set()
+    for entry in alexa_media_config_entries():
+        if not entry.get("disabled"):
+            identities.update(entry.get("identities", []))
     return identities
 
 
-def find_alexa_media_session_files() -> list[Path]:
-    """Find Alexa Media Player cookie jars in the mounted HA config directory."""
+def raw_alexa_media_session_files() -> list[Path]:
+    """Find all Alexa Media Player cookie jars in the mounted HA config directory."""
     found: list[Path] = []
     seen: set[Path] = set()
     for base_path in HA_CONFIG_PATHS:
@@ -367,14 +388,26 @@ def find_alexa_media_session_files() -> list[Path]:
                         seen.add(candidate)
             except OSError:
                 LOGGER.debug("Could not scan %s", storage_path, exc_info=True)
+    return sorted(found, key=lambda path: safe_mtime(path), reverse=True)
 
+
+def session_matches_active_identity(path: Path, active_identities: set[str]) -> bool:
+    """Return whether a session file belongs to an active AMP config entry."""
+    return bool(alexa_media_session_identity_keys(path) & active_identities)
+
+
+def sort_session_file(path: Path, active_identities: set[str]) -> tuple[int, float]:
+    """Sort active sessions before unmatched sessions, newest first."""
+    return (0 if session_matches_active_identity(path, active_identities) else 1, -safe_mtime(path))
+
+
+def find_alexa_media_session_files() -> list[Path]:
+    """Return deduplicated Alexa Media Player cookie jars."""
     active_identities = active_alexa_media_identities()
     filtered: list[Path] = []
     deduped_identities: set[str] = set()
-    for candidate in sorted(found, key=lambda path: safe_mtime(path), reverse=True):
+    for candidate in sorted(raw_alexa_media_session_files(), key=lambda path: sort_session_file(path, active_identities)):
         session_keys = alexa_media_session_identity_keys(candidate)
-        if active_identities and not (session_keys & active_identities):
-            continue
         identity_key = preferred_identity_key(session_keys, candidate.stem)
         if identity_key in deduped_identities:
             continue
@@ -1267,14 +1300,42 @@ def amazon_account_statuses(settings: dict[str, Any]) -> list[dict[str, Any]]:
 
 def alexa_media_sessions_payload() -> list[dict[str, Any]]:
     """Return detected Alexa Media Player sessions for the UI."""
-    return [
-        {
-            "name": path.name,
-            "label": alexa_media_session_label(path),
-            "mtime": safe_mtime(path),
-        }
-        for path in find_alexa_media_session_files()
-    ]
+    active_identities = active_alexa_media_identities()
+    sessions: list[dict[str, Any]] = []
+    session_identity_keys: set[str] = set()
+    for path in find_alexa_media_session_files():
+        identity_keys = alexa_media_session_identity_keys(path)
+        identity_key = preferred_identity_key(identity_keys, path.stem)
+        is_active = session_matches_active_identity(path, active_identities)
+        session_identity_keys.add(identity_key)
+        sessions.append(
+            {
+                "name": path.name,
+                "label": alexa_media_session_label(path),
+                "mtime": safe_mtime(path),
+                "active": is_active,
+                "importable": True,
+                "status": "Aktiv in Alexa Media Player" if is_active else "Nicht eindeutig aktiv; Import ist moeglich",
+            }
+        )
+
+    for entry in alexa_media_config_entries():
+        if entry.get("disabled"):
+            continue
+        identity_key = preferred_identity_key(set(entry.get("identities", [])), str(entry.get("title", "")))
+        if identity_key in session_identity_keys:
+            continue
+        sessions.append(
+            {
+                "name": f"missing:{entry.get('entry_id')}",
+                "label": str(entry.get("title") or "Alexa Media Player"),
+                "mtime": 0,
+                "active": True,
+                "importable": False,
+                "status": "Aktiv in Alexa Media Player, aber keine Cookie-Datei gefunden",
+            }
+        )
+    return sessions
 
 
 class ConfigHandler(BaseHTTPRequestHandler):
@@ -1418,6 +1479,7 @@ class ConfigHandler(BaseHTTPRequestHandler):
         """Return UI configuration payload."""
         settings = load_settings()
         account_statuses = amazon_account_statuses(settings)
+        alexa_media_sessions = alexa_media_sessions_payload()
         try:
             entities = self.runtime.client.list_todo_entities()
             entity_error = None
@@ -1433,8 +1495,8 @@ class ConfigHandler(BaseHTTPRequestHandler):
             "status": self.runtime.last_result,
             "alexa_cookies_present": any(status["cookie_present"] for status in account_statuses),
             "amazon_accounts_status": account_statuses,
-            "alexa_media_session_available": bool(find_alexa_media_session_files()),
-            "alexa_media_sessions": alexa_media_sessions_payload(),
+            "alexa_media_session_available": any(session.get("importable") for session in alexa_media_sessions),
+            "alexa_media_sessions": alexa_media_sessions,
             "entity_error": entity_error,
         }
 
@@ -1994,16 +2056,40 @@ INDEX_HTML = r"""<!doctype html>
     .session-row {
       display: flex;
       gap: 10px;
-      align-items: center;
+      align-items: flex-start;
       border: 1px solid var(--border);
       border-radius: 6px;
       padding: 9px 10px;
       font-weight: 500;
     }
-    .session-row span {
+    .session-row.disabled {
+      opacity: 0.72;
+    }
+    .session-main {
       min-width: 0;
       overflow-wrap: anywhere;
     }
+    .session-title {
+      display: block;
+    }
+    .session-status {
+      color: var(--muted);
+      display: block;
+      font-size: 12px;
+      margin-top: 2px;
+    }
+    .badge {
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 650;
+      margin-left: 8px;
+      padding: 1px 7px;
+      vertical-align: middle;
+    }
+    .badge.ok { color: var(--ok); }
+    .badge.warn { color: var(--danger); }
     .setup-browser {
       border: 1px solid var(--border);
       border-radius: 8px;
@@ -2270,12 +2356,27 @@ INDEX_HTML = r"""<!doctype html>
       for (const session of alexaMediaSessions) {
         const label = document.createElement("label");
         label.className = "session-row";
+        if (!session.importable) label.classList.add("disabled");
         const checkbox = document.createElement("input");
         checkbox.type = "checkbox";
         checkbox.value = session.name;
-        const text = document.createElement("span");
-        text.textContent = session.label || session.name;
-        label.append(checkbox, text);
+        checkbox.disabled = !session.importable;
+        const content = document.createElement("span");
+        content.className = "session-main";
+        const title = document.createElement("span");
+        title.className = "session-title";
+        title.textContent = session.label || session.name;
+        const badge = document.createElement("span");
+        badge.className = `badge ${session.active ? "ok" : "warn"}`;
+        badge.textContent = session.importable
+          ? (session.active ? "aktiv" : "ungeprueft")
+          : "ohne Datei";
+        const status = document.createElement("span");
+        status.className = "session-status";
+        status.textContent = session.status || "";
+        title.appendChild(badge);
+        content.append(title, status);
+        label.append(checkbox, content);
         ampSessionList.appendChild(label);
       }
     }
@@ -2300,7 +2401,7 @@ INDEX_HTML = r"""<!doctype html>
         const card = document.createElement("div");
         card.className = "account-card";
         card.dataset.accountId = account.id || newAccountId();
-        const sessionOptions = alexaMediaSessions.map((session) => (
+        const sessionOptions = alexaMediaSessions.filter((session) => session.importable).map((session) => (
           `<option value="${escapeHtml(session.name)}">${escapeHtml(session.label || session.name)}</option>`
         )).join("");
         card.innerHTML = `
@@ -2378,9 +2479,14 @@ INDEX_HTML = r"""<!doctype html>
       interval.value = settings.interval_seconds;
       syncCompleted.checked = settings.sync_completed;
       removeCompleted.checked = settings.remove_completed;
-      ampStatus.textContent = data.alexa_media_session_available
-        ? `${alexaMediaSessions.length} Alexa-Media-Player-Session(s) gefunden.`
-        : "Keine Alexa-Media-Player-Session gefunden. Der Login-Browser bleibt als Fallback verfuegbar.";
+      const importableSessions = alexaMediaSessions.filter((session) => session.importable);
+      const missingSessions = alexaMediaSessions.filter((session) => !session.importable);
+      ampStatus.textContent = importableSessions.length
+        ? `${importableSessions.length} importierbare Alexa-Media-Player-Session(s) gefunden.`
+        : "Keine importierbare Alexa-Media-Player-Session gefunden. Der Login-Browser bleibt als Fallback verfuegbar.";
+      if (missingSessions.length) {
+        ampStatus.textContent += ` ${missingSessions.length} aktive(r) Alexa-Media-Player-Account(s) ohne Cookie-Datei.`;
+      }
       renderAlexaMediaSessions();
       renderAccounts(settings.amazon_accounts || []);
       applyModeVisibility();
