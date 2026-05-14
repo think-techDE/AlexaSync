@@ -10,7 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from settings import WEB_PORT, load_settings, save_settings
+from settings import WEB_PORT, load_settings, persist_amazon_account, save_settings
 from alexa_client import (
     InternalAlexaClient,
     account_cookie_path,
@@ -164,7 +164,8 @@ class WebHandler(BaseHTTPRequestHandler):
                 if not isinstance(cookies, list):
                     raise ValueError("Cookies muessen als JSON-Liste uebergeben werden.")
                 save_cookie_list(cookies, account_cookie_path(account["id"]))
-                self.send_json({"ok": True})
+                settings = persist_amazon_account(settings, account)
+                self.send_json({"ok": True, "settings": settings})
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
@@ -187,7 +188,8 @@ class WebHandler(BaseHTTPRequestHandler):
                     account_id=account["id"],
                     source_name=payload.get("source") or None,
                 )
-                self.send_json({"ok": True, "result": result})
+                settings = persist_amazon_account(settings, account)
+                self.send_json({"ok": True, "result": result, "settings": settings})
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
@@ -241,7 +243,10 @@ class WebHandler(BaseHTTPRequestHandler):
         if self.path == "/api/setup/save":
             try:
                 result = self.runtime.save_setup_cookies()
-                self.send_json({"ok": True, "result": result})
+                settings = load_settings()
+                if isinstance(result.get("account"), dict):
+                    settings = persist_amazon_account(settings, result["account"])
+                self.send_json({"ok": True, "result": result, "settings": settings})
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return

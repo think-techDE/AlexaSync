@@ -161,7 +161,12 @@ class RuntimeState:
         if not cookies:
             raise RuntimeError("Keine Cookies im Setup-Browser gefunden.")
         save_cookie_list(cookies, account_cookie_path(self.setup_account["id"]))
-        return {"saved": True, "cookie_count": len(cookies), "account_id": self.setup_account["id"]}
+        return {
+            "saved": True,
+            "cookie_count": len(cookies),
+            "account_id": self.setup_account["id"],
+            "account": dict(self.setup_account),
+        }
 
 
 def main() -> int:

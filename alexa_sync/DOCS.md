@@ -11,18 +11,17 @@
 4. **Alexa Sync** installieren.
 5. Add-on starten.
 6. Die **Weboberflaeche** oeffnen.
-7. Modus **Alexa direkt - Home Assistant Liste** waehlen.
-8. Amazon-Domain und Bring-/Ziel-Liste auswaehlen.
-9. Wenn Alexa Media Player bereits eingerichtet ist:
+7. Amazon-Domain und Bring-/Ziel-Liste auswaehlen.
+8. Wenn Alexa Media Player bereits eingerichtet ist:
    gewuenschte Sessions markieren und **Ausgewaehlte aus Alexa Media Player
    uebernehmen** klicken.
-10. Weitere Amazon-Konten bei Bedarf mit **Amazon-Konto hinzufuegen** anlegen.
-11. Sonst pro Konto **Amazon-Anmeldung oeffnen**, im eingeblendeten Amazon-
+9. Weitere Amazon-Konten bei Bedarf mit **Amazon-Konto hinzufuegen** anlegen.
+10. Sonst pro Konto **Amazon-Anmeldung oeffnen**, im eingeblendeten Amazon-
     Browser anmelden und danach **Session uebernehmen**.
 
-## Direkter Alexa-Modus
+## Synchronisation
 
-Der direkte Modus laeuft komplett in diesem Add-on. Chromium/Selenium oeffnet
+Die Synchronisation laeuft komplett in diesem Add-on. Chromium/Selenium oeffnet
 die Alexa-Einkaufsliste auf der Amazon-Webseite und nutzt importierte Amazon-
 Session-Cookies. Amazon-Benutzername und Passwort werden nicht im Add-on
 gespeichert.
@@ -51,7 +50,6 @@ Mehrere Amazon-Konten werden gegen dieselbe `ha_list` synchronisiert:
 Beispiel:
 
 ```yaml
-mode: internal_alexa
 amazon_domain: amazon.de
 ha_list: todo.einkaufsliste_2
 interval_seconds: 120
@@ -64,38 +62,10 @@ Falls der interne Browser nicht ausreicht, koennen Cookies weiterhin in der
 Weboberflaeche importiert werden. Erwartet wird eine JSON-Liste im Format, das
 Browser-Cookie-Export-Erweiterungen typischerweise liefern.
 
-## HA-Listenmodus
-
-```yaml
-mode: ha_todo_pair
-list_a: todo.einkaufsliste_2
-list_b: todo.zuhause
-interval_seconds: 120
-sync_completed: true
-remove_completed: false
-log_level: info
-```
-
-## Externer Alexa-Server-Modus
-
-Dieser Modus bleibt als Kompatibilitaetsmodus verfuegbar, falls bereits ein
-Server aus `madmachinations/home-assistant-alexa-shopping-list` laeuft.
-
-```yaml
-mode: alexa_server
-alexa_server_host: 192.168.1.10
-alexa_server_port: 4000
-ha_list: todo.einkaufsliste_2
-interval_seconds: 120
-sync_completed: true
-remove_completed: false
-log_level: info
-```
-
 ## Voraussetzungen
 
 Die Ziel-Liste, z.B. Bring, muss als Home-Assistant-`todo`-Entity vorhanden
-sein. Der direkte Alexa-Modus spricht zusaetzlich ueber Chromium/Selenium mit
+sein. Alexa Sync spricht zusaetzlich ueber Chromium/Selenium mit
 der Amazon-Webseite.
 
 Unterstuetzte Architekturen: `amd64` und `aarch64`.

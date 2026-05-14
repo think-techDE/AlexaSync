@@ -52,12 +52,22 @@ def extract_items(response: Any, entity_id: str) -> list[dict[str, Any]]:
 def normalize_summary(summary: str) -> str:
     """Normalize item names for matching."""
     normalized = summary.strip().casefold()
-    normalized = (
-        normalized.replace("ä", "ae")
-        .replace("ö", "oe")
-        .replace("ü", "ue")
-        .replace("ß", "ss")
-    )
+    replacements = {
+        "\u00e4": "ae",
+        "\u00f6": "oe",
+        "\u00fc": "ue",
+        "\u00df": "ss",
+        "\u00c3\u00a4": "ae",
+        "\u00c3\u00b6": "oe",
+        "\u00c3\u00bc": "ue",
+        "\u00c3\u009f": "ss",
+        "\u00e3\u00a4": "ae",
+        "\u00e3\u00b6": "oe",
+        "\u00e3\u00bc": "ue",
+        "\u00e3\u009f": "ss",
+    }
+    for source, target in replacements.items():
+        normalized = normalized.replace(source, target)
     normalized = re.sub(r"[^\w]+", " ", normalized)
     return re.sub(r"\s+", " ", normalized).strip()
 

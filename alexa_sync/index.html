@@ -298,29 +298,10 @@
         <div class="module-header">
           <span class="step">1</span>
           <div>
-            <h2>Ziel & Modus</h2>
-            <p>Im Standardfall reicht die Bring-/Ziel-Liste. Erweiterte Modi bleiben fuer Spezialfaelle verfuegbar.</p>
+            <h2>Bring-Ziel</h2>
+            <p>Waehle die Liste, die mit allen aktiven Alexa-Konten synchronisiert wird.</p>
           </div>
         </div>
-        <div class="mode-row">
-          <label class="radio">
-            <input type="radio" name="mode" value="internal_alexa">
-            <span><strong>Alexa direkt mit Bring synchronisieren</strong><br>Empfohlen. Ein Add-on, keine zweite Server-Komponente.</span>
-          </label>
-        </div>
-        <details>
-          <summary>Erweiterte Modi</summary>
-          <div class="mode-row">
-            <label class="radio">
-              <input type="radio" name="mode" value="ha_todo_pair">
-              <span><strong>Home Assistant Liste - Home Assistant Liste</strong><br>Fuer Bring, lokale Listen oder andere vorhandene `todo.*`-Entities.</span>
-            </label>
-            <label class="radio">
-              <input type="radio" name="mode" value="alexa_server">
-              <span><strong>Externer Alexa Shopping List Server - Home Assistant Liste</strong><br>Kompatibilitaetsmodus fuer bestehende Installationen.</span>
-            </label>
-          </div>
-        </details>
         <div class="grid">
           <div class="internal-alexa-field">
             <label for="amazon-domain">Standard-Domain fuer neue Konten</label>
@@ -329,26 +310,6 @@
           <div class="internal-alexa-field">
             <label for="internal-ha-list">Bring-/Ziel-Liste</label>
             <select id="internal-ha-list" name="internal_ha_list"></select>
-          </div>
-          <div class="ha-pair-field">
-            <label for="list-a">Liste A</label>
-            <select id="list-a" name="list_a"></select>
-          </div>
-          <div class="ha-pair-field">
-            <label for="list-b">Liste B</label>
-            <select id="list-b" name="list_b"></select>
-          </div>
-          <div class="alexa-field">
-            <label for="alexa-host">Alexa-Server Host/IP</label>
-            <input id="alexa-host" name="alexa_server_host" type="text" placeholder="192.168.1.10">
-          </div>
-          <div class="alexa-field">
-            <label for="alexa-port">Alexa-Server Port</label>
-            <input id="alexa-port" name="alexa_server_port" type="number" min="1" max="65535" step="1">
-          </div>
-          <div class="alexa-field">
-            <label for="ha-list">Home-Assistant-Liste</label>
-            <select id="ha-list" name="ha_list"></select>
           </div>
           <div>
             <label for="interval">Sync-Intervall in Sekunden</label>
@@ -432,13 +393,8 @@
   </main>
 
   <script>
-    const listA = document.getElementById("list-a");
-    const listB = document.getElementById("list-b");
-    const haList = document.getElementById("ha-list");
     const internalHaList = document.getElementById("internal-ha-list");
     const amazonDomain = document.getElementById("amazon-domain");
-    const alexaHost = document.getElementById("alexa-host");
-    const alexaPort = document.getElementById("alexa-port");
     const interval = document.getElementById("interval");
     const syncCompleted = document.getElementById("sync-completed");
     const removeCompleted = document.getElementById("remove-completed");
@@ -450,7 +406,6 @@
     const setupBrowser = document.getElementById("setup-browser");
     const setupScreenshot = document.getElementById("setup-screenshot");
     const ampStatus = document.getElementById("amp-status");
-    const modeInputs = [...document.querySelectorAll('input[name="mode"]')];
     let accountStatuses = [];
     let alexaMediaSessions = [];
     let setupFocused = false;
@@ -609,19 +564,12 @@
     }
 
     function selectedMode() {
-      return document.querySelector('input[name="mode"]:checked')?.value || "internal_alexa";
+      return "internal_alexa";
     }
 
     function applyModeVisibility() {
-      const mode = selectedMode();
-      document.querySelectorAll(".ha-pair-field").forEach((el) => {
-        el.style.display = mode === "ha_todo_pair" ? "" : "none";
-      });
-      document.querySelectorAll(".alexa-field").forEach((el) => {
-        el.style.display = mode === "alexa_server" ? "" : "none";
-      });
       document.querySelectorAll(".internal-alexa-field").forEach((el) => {
-        el.style.display = mode === "internal_alexa" ? "" : "none";
+        el.style.display = "";
       });
     }
 
@@ -629,18 +577,11 @@
       const res = await fetch("api/config");
       const data = await res.json();
       const settings = data.settings;
-      const mode = settings.mode || "internal_alexa";
       const suggestedList = data.suggested_ha_list || "";
       accountStatuses = data.amazon_accounts_status || [];
       alexaMediaSessions = data.alexa_media_sessions || [];
-      document.querySelector(`input[name="mode"][value="${mode}"]`).checked = true;
-      fillSelect(listA, data.todo_entities, settings.list_a);
-      fillSelect(listB, data.todo_entities, settings.list_b);
-      fillSelect(haList, data.todo_entities, settings.ha_list);
       fillSelect(internalHaList, data.todo_entities, settings.ha_list || suggestedList);
       amazonDomain.value = settings.amazon_domain || "amazon.de";
-      alexaHost.value = settings.alexa_server_host || "";
-      alexaPort.value = settings.alexa_server_port || 4000;
       interval.value = settings.interval_seconds;
       syncCompleted.checked = settings.sync_completed;
       removeCompleted.checked = settings.remove_completed;
@@ -665,11 +606,7 @@
         mode: selectedMode(),
         amazon_domain: amazonDomain.value,
         amazon_accounts: collectAccounts(),
-        list_a: listA.value,
-        list_b: listB.value,
-        alexa_server_host: alexaHost.value,
-        alexa_server_port: Number(alexaPort.value),
-        ha_list: selectedMode() === "internal_alexa" ? internalHaList.value : haList.value,
+        ha_list: internalHaList.value,
         interval_seconds: Number(interval.value),
         sync_completed: syncCompleted.checked,
         remove_completed: removeCompleted.checked
@@ -697,13 +634,15 @@
     });
 
     document.getElementById("save-cookies").addEventListener("click", async () => {
+      const account = collectAccounts().find((item) => item.id === cookieAccount.value);
       const res = await fetch("api/alexa/cookies", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({account_id: cookieAccount.value, cookies: cookies.value})
+        body: JSON.stringify({account_id: cookieAccount.value, account, cookies: cookies.value})
       });
       const data = await res.json();
       setMessage(data.ok ? "Cookies importiert." : data.error, data.ok ? "ok" : "error");
+      if (data.ok) await loadConfig();
     });
 
     document.getElementById("import-amp-selected").addEventListener("click", async () => {
@@ -858,8 +797,6 @@
       event.preventDefault();
       await setupAction("api/setup/type", {text});
     });
-
-    modeInputs.forEach((input) => input.addEventListener("change", applyModeVisibility));
 
     loadConfig().catch((err) => setMessage(err.message, "error"));
   </script>

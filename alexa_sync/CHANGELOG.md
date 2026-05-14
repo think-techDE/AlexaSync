@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.0
+
+- Backend in getrennte Module fuer Einstellungen, Home Assistant, Alexa-Client, Sync-Logik und Weboberflaeche aufgeteilt.
+- Weboberflaeche auf den All-in-One-Pfad Alexa zu Bring/Ziel-Liste reduziert.
+- Session-Uebernahmen aus Alexa Media Player, Login-Browser und Cookie-Import speichern das betroffene Amazon-Konto dauerhaft.
+- Dokumentation und Add-on-Optionen an die vereinfachte Konfiguration angepasst.
+- Umlaut-Normalisierung fuer den Listenabgleich robuster gemacht.
+
 ## 0.8.4
 
 - Weboberflaeche in klare Module fuer Ziel/Modus, Alexa-Media-Player, Amazon-Konten, Fallback und Sync-Verhalten gegliedert.
