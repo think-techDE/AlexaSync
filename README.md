@@ -3,6 +3,7 @@
 [![Version](https://img.shields.io/badge/version-0.9.8-blue.svg)](alexa_sync/CHANGELOG.md)
 [![Architektur](https://img.shields.io/badge/arch-amd64%20%7C%20aarch64-lightgrey.svg)](alexa_sync/build.yaml)
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-Add--on-41BDF5.svg?logo=home-assistant)](https://www.home-assistant.io/addons/)
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-thinktech-FFDD00?logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/thinktech)
 
 Home-Assistant-Add-on-Repository zur Synchronisation von Alexa-Einkaufslisten mit einer Home-Assistant-`todo`-Liste (z.B. Bring).
 
@@ -88,14 +89,6 @@ log_level: info
 - Ausführliche Dokumentation: [`alexa_sync/DOCS.md`](alexa_sync/DOCS.md)
 - Changelog: [`alexa_sync/CHANGELOG.md`](alexa_sync/CHANGELOG.md)
 - Add-on-Verzeichnis: [`alexa_sync/`](alexa_sync)
-
----
-
-## Unterstützung
-
-Wenn Alexa Sync dir Zeit spart, freue ich mich über einen Kaffee ☕
-
-[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-thinktech-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/thinktech)
 
 ---
 
