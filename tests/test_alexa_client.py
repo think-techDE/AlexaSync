@@ -13,10 +13,12 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "alexa_sync"))
 
 from alexa_client import (  # noqa: E402
+    InternalAlexaClient,
     extract_alexa_media_cookies,
     import_selected_alexa_media_sessions,
     load_alexa_media_cookie_pickle,
 )
+from ha_client import TodoItem  # noqa: E402
 
 
 def by_name(cookies: list[dict[str, object]]) -> dict[str, dict[str, object]]:
@@ -149,6 +151,57 @@ class AlexaMediaCookieExtractionTests(unittest.TestCase):
 
         account_ids = [account["id"] for account in result["settings"]["amazon_accounts"]]
         self.assertEqual(account_ids, ["ben@think-tech.eu", "mary_mausi025@web.de"])
+
+
+class ScriptDriver:
+    def __init__(self, results: list[dict[str, object]]) -> None:
+        self.results = list(results)
+        self.calls: list[tuple[str, str]] = []
+
+    def execute_script(self, script: str, wanted: str) -> dict[str, object]:
+        self.calls.append((script, wanted))
+        return self.results.pop(0)
+
+
+class TestableAlexaClient(InternalAlexaClient):
+    def __init__(self) -> None:
+        super().__init__("amazon.de")
+        self.open_count = 0
+
+    def _open_list(self) -> None:
+        self.open_count += 1
+
+
+class AlexaRemoveItemTests(unittest.TestCase):
+    def test_remove_item_clicks_matching_row_via_dom_script(self) -> None:
+        client = TestableAlexaClient()
+        driver = ScriptDriver([{"status": "clicked", "text": "Biomuellbeutel"}])
+        client.driver = driver
+
+        with patch("alexa_client.time.sleep"):
+            removed = client._remove_item_once(TodoItem(uid="1", summary="Biom\u00fcllbeutel", status="needs_action"))
+
+        self.assertTrue(removed)
+        self.assertEqual(client.open_count, 1)
+        self.assertEqual(driver.calls[0][1], "biomuellbeutel")
+        self.assertIn("querySelector", driver.calls[0][0])
+
+    def test_remove_item_returns_false_after_stable_not_found_scrolls(self) -> None:
+        client = TestableAlexaClient()
+        driver = ScriptDriver(
+            [
+                {"status": "not-found", "lastText": "Milch", "rowCount": 10},
+                {"status": "not-found", "lastText": "Milch", "rowCount": 10},
+                {"status": "not-found", "lastText": "Milch", "rowCount": 10},
+            ]
+        )
+        client.driver = driver
+
+        with patch("alexa_client.time.sleep"):
+            removed = client._remove_item_once(TodoItem(uid="1", summary="Brot", status="needs_action"))
+
+        self.assertFalse(removed)
+        self.assertEqual(len(driver.calls), 3)
 
 
 if __name__ == "__main__":

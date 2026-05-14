@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.8
+
+- Alexa-Eintraege werden robuster entfernt, wenn Amazon die virtuelle Einkaufsliste waehrend Scroll oder Klick neu rendert.
+- Dokumentation und README auf den vereinfachten Alexa-Media-Player-Sessionimport aktualisiert.
+
 ## 0.9.7
 
 - Alexa-Media-Player-Import ersetzt jetzt die importierte Kontenliste durch die aktuell ausgewaehlten Sessions, statt alte Eintraege mitzuschleppen.

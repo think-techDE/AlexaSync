@@ -22,6 +22,63 @@ from ha_client import TodoItem
 
 LOGGER = logging.getLogger("alexa_sync")
 
+CLICK_VISIBLE_SHOPPING_LIST_ITEM_SCRIPT = r"""
+const wanted = arguments[0];
+const normalize = (value) => {
+  let text = String(value || "").trim().toLocaleLowerCase("de-DE");
+  const replacements = {
+    "\u00e4": "ae",
+    "\u00f6": "oe",
+    "\u00fc": "ue",
+    "\u00df": "ss",
+    "\u00c3\u00a4": "ae",
+    "\u00c3\u00b6": "oe",
+    "\u00c3\u00bc": "ue",
+    "\u00c3\u009f": "ss",
+    "\u00e3\u00a4": "ae",
+    "\u00e3\u00b6": "oe",
+    "\u00e3\u00bc": "ue",
+    "\u00e3\u009f": "ss",
+  };
+  for (const [source, target] of Object.entries(replacements)) {
+    text = text.split(source).join(target);
+  }
+  text = text.replace(/[^\p{L}\p{N}_]+/gu, " ");
+  return text.replace(/\s+/g, " ").trim();
+};
+
+const list = document.querySelector(".virtual-list");
+if (!list) {
+  return {status: "missing-list"};
+}
+
+const rows = Array.from(list.querySelectorAll(".inner"));
+let lastText = null;
+for (const row of rows) {
+  const title = row.querySelector(".item-title");
+  const titleText = title ? title.innerText.trim() : "";
+  if (titleText) {
+    lastText = titleText;
+  }
+  if (normalize(titleText) !== wanted) {
+    continue;
+  }
+
+  const button = row.querySelector(".item-actions-2 button");
+  if (!button) {
+    return {status: "missing-button", text: titleText, lastText};
+  }
+  button.scrollIntoView({block: "center"});
+  button.click();
+  return {status: "clicked", text: titleText, lastText};
+}
+
+if (rows.length) {
+  rows[rows.length - 1].scrollIntoView({block: "end"});
+}
+return {status: "not-found", lastText, rowCount: rows.length};
+"""
+
 
 # ---------------------------------------------------------------------------
 # Account ID helpers
@@ -780,6 +837,7 @@ class InternalAlexaClient:
         """Remove an item from Alexa active list."""
         from selenium.common.exceptions import (
             ElementClickInterceptedException,
+            JavascriptException,
             NoSuchElementException,
             StaleElementReferenceException,
         )
@@ -788,7 +846,12 @@ class InternalAlexaClient:
         for attempt in range(1, 4):
             try:
                 return self._remove_item_once(item)
-            except (StaleElementReferenceException, NoSuchElementException, ElementClickInterceptedException) as exc:
+            except (
+                StaleElementReferenceException,
+                NoSuchElementException,
+                ElementClickInterceptedException,
+                JavascriptException,
+            ) as exc:
                 last_error = exc
                 LOGGER.debug("Retrying Alexa remove for '%s' after DOM change", item.summary, exc_info=True)
                 time.sleep(attempt)
@@ -797,43 +860,36 @@ class InternalAlexaClient:
 
     def _remove_item_once(self, item: TodoItem) -> bool:
         """Remove an item once, returning whether a row was clicked."""
-        from selenium.webdriver.common.by import By
-        from selenium.common.exceptions import ElementClickInterceptedException, NoSuchElementException
         from ha_client import normalize_summary
 
         if self.driver is None:
             raise RuntimeError("Browser is not running")
         self._open_list()
+        wanted = normalize_summary(item.summary)
         last_text = None
         stable_rounds = 0
 
         while stable_rounds < 2:
-            list_container = self.driver.find_element(By.CLASS_NAME, "virtual-list")
-            rows = list_container.find_elements(By.CLASS_NAME, "inner")
-            for row in rows:
-                try:
-                    title = row.find_element(By.CLASS_NAME, "item-title").get_attribute("innerText").strip()
-                except NoSuchElementException:
-                    continue
-                if normalize_summary(title) == normalize_summary(item.summary):
-                    button = row.find_element(By.CLASS_NAME, "item-actions-2").find_element(By.TAG_NAME, "button")
-                    self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", button)
-                    time.sleep(0.2)
-                    try:
-                        button.click()
-                    except ElementClickInterceptedException:
-                        self.driver.execute_script("arguments[0].click();", button)
-                    time.sleep(1)
-                    return True
+            result = self.driver.execute_script(CLICK_VISIBLE_SHOPPING_LIST_ITEM_SCRIPT, wanted)
+            result = result if isinstance(result, dict) else {}
+            status = result.get("status")
+            if status == "clicked":
+                time.sleep(1)
+                return True
+            if status == "missing-list":
+                from selenium.common.exceptions import NoSuchElementException
 
-            current_last = rows[-1].text if rows else None
+                raise NoSuchElementException("virtual-list")
+            if status == "missing-button":
+                LOGGER.debug("Alexa row for '%s' has no remove button", item.summary)
+                return False
+
+            current_last = result.get("lastText")
             if current_last == last_text:
                 stable_rounds += 1
             else:
                 stable_rounds = 0
             last_text = current_last
 
-            if rows:
-                self.driver.execute_script("arguments[0].scrollIntoView();", rows[-1])
             time.sleep(1)
         return False

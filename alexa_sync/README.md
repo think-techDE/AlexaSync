@@ -1,53 +1,78 @@
-# Alexa Sync
+# Alexa Sync Add-on
 
 Synchronisiert eine oder mehrere Alexa-Einkaufslisten mit einer
 Home-Assistant-`todo`-Liste, typischerweise der Bring-Einkaufsliste.
 
-Typischer Einsatz:
+## Kurzfassung
 
-- Mehrere Amazon-Konten schreiben per Sprachbefehl auf ihre Alexa-Einkaufsliste.
-- Das Add-on kopiert neue Eintraege in die Bring-Einkaufsliste.
-- Abgehakte Eintraege in Bring werden aus allen aktiven Alexa-Listen entfernt.
+1. Alexa Media Player in Home Assistant einrichten.
+2. Alexa Sync starten.
+3. Ziel-Liste auswaehlen.
+4. **Sessions uebernehmen** klicken.
+5. Optional manuell **Jetzt synchronisieren** ausfuehren.
 
-## Konfiguration
+## Bedienung
 
-Die bevorzugte Konfiguration erfolgt ueber die **Weboberflaeche** des Add-ons
-oder ueber den Sidebar-Eintrag **Alexa Sync**. Es muss nur die
-Bring-/Ziel-Liste gewaehlt und mindestens eine Amazon-Session gespeichert werden. Wenn
-Alexa Media Player bereits in Home Assistant eingerichtet ist, kann dessen
-Session per Knopfdruck uebernommen werden. Sind mehrere Alexa-Media-Player-
-Sessions vorhanden, sind sie vorausgewaehlt; beim Uebernehmen legt das Add-on
-die Amazon-Konten automatisch an und speichert die aktuelle Ziel-Listen-
-Konfiguration mit. Ein erneutes Uebernehmen ersetzt die importierte Kontenliste
-durch die aktuell ausgewaehlten Sessions; einzelne importierte Konten koennen
-in der Weboberflaeche entfernt werden.
+### Ziel
 
-Die YAML-Optionen bleiben als Startwerte erhalten.
+Waehle die Home-Assistant-`todo`-Liste, die als gemeinsame Einkaufsliste genutzt
+werden soll. Alle importierten Alexa-Konten werden gegen diese Liste
+synchronisiert.
+
+### Alexa Media Player
+
+Das Add-on sucht unter `/homeassistant/.storage` nach Alexa-Media-Player-
+Sessiondateien. Importierbare Sessions sind vorausgewaehlt.
+
+Beim Klick auf **Sessions uebernehmen** passiert Folgendes:
+
+- Die ausgewaehlten Sessiondateien werden gelesen.
+- Daraus werden Amazon-Session-Cookies extrahiert.
+- Pro Session wird ein Amazon-Konto angelegt.
+- Die aktuell importierte Kontenliste wird durch diese Auswahl ersetzt.
+- Die Ziel-Liste und Domain werden mitgespeichert.
+
+Einzelne importierte Konten koennen danach in der Weboberflaeche entfernt
+werden.
+
+### Status
+
+Der Statusbereich zeigt:
+
+- ob die Konfiguration vollstaendig ist,
+- wann zuletzt synchronisiert wurde,
+- wie viele Schreibvorgaenge der letzte Sync ausgefuehrt hat,
+- und den letzten Fehler, falls einer aufgetreten ist.
+
+## Synchronisationslogik
+
+- Neue Alexa-Eintraege werden in die Ziel-Liste geschrieben.
+- Neue Ziel-Listen-Eintraege werden in alle aktiven Alexa-Listen geschrieben.
+- Erledigte Ziel-Listen-Eintraege werden aus den Alexa-Listen entfernt.
+- Sync-Metadaten werden pro Amazon-Konto gespeichert.
+
+## Optionen
 
 | Option | Beschreibung |
 | --- | --- |
-| `amazon_domain` | Standard-Amazon-Domain fuer neue Konten, z.B. `amazon.de`. |
+| `amazon_domain` | Amazon-Domain fuer neue Imports, z.B. `amazon.de`. |
 | `amazon_accounts` | Aus Alexa Media Player importierte Amazon-Konten. |
-| `ha_list` | Bring-/Ziel-Liste als Home-Assistant-`todo`-Entity. |
-| `interval_seconds` | Polling-Intervall in Sekunden. |
-| `sync_completed` | Synchronisiert erledigte Eintraege. |
-| `remove_completed` | Entfernt abgeschlossene Eintraege nach erfolgreichem Sync aus der HA-Liste. |
+| `ha_list` | Ziel-Liste als Home-Assistant-`todo`-Entity. |
+| `interval_seconds` | Sync-Intervall in Sekunden. |
+| `sync_completed` | Erledigte Eintraege zwischen Ziel-Liste und Alexa abgleichen. |
+| `remove_completed` | Erledigte Eintraege nach erfolgreichem Sync aus der Ziel-Liste entfernen. |
 | `log_level` | Log-Level des Add-ons. |
 
-## Amazon-Session
+## Sicherheit
 
-Amazon stellt keine offizielle stabile API fuer Alexa-Einkaufslisten bereit. Das
-Add-on speichert deshalb keine Amazon-Zugangsdaten. Der einfachste Weg ist,
-die gefundenen Alexa-Media-Player-Sessions mit **Sessions uebernehmen** zu
-importieren. Dafuer liest das Add-on nur die gewaehlten
-Alexa-Media-Player-Cookie-Dateien aus der Home-Assistant-Konfiguration und legt
-je Datei ein Amazon-Konto an. Es akzeptiert dabei verschachtelte CookieJar-
-Pickles und einfache AlexaPy-Cookie-Mappings. Der Zugriff auf die
-Home-Assistant-Konfiguration ist read-only. Alte Cookie-Dateien werden
-als ungeprueft markiert, wenn sie keinem aktiven Alexa-Media-Player-Config-Entry
-mehr zugeordnet werden koennen; doppelte Dateien derselben Mailadresse erscheinen
-nur einmal. Aktive Alexa-Media-Player-Konten ohne Cookie-Datei werden angezeigt,
-koennen aber nicht aus Alexa Media Player importiert werden.
+- Amazon-Benutzername und Passwort werden nicht im Add-on gespeichert.
+- Die Home-Assistant-Konfiguration wird fuer den Session-Import read-only
+  eingebunden.
+- Importierte Amazon-Cookies werden unter `/data` gespeichert.
 
-Wenn Amazon eine importierte Session beendet, muss die betroffene Session in
-Alexa Media Player erneuert und danach im Add-on erneut uebernommen werden.
+## Grenzen
+
+Amazon bietet keine offizielle stabile API fuer Alexa-Einkaufslisten. Das Add-on
+nutzt daher Chromium/Selenium und die importierten Session-Cookies. Wenn Amazon
+eine Session beendet, muss sie in Alexa Media Player erneuert und danach im
+Add-on erneut uebernommen werden.

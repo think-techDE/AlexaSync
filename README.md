@@ -1,45 +1,53 @@
 # Alexa Sync
 
-Home-Assistant-Add-on-Repository fuer die Synchronisation der Alexa-
-Einkaufsliste mit einer Home-Assistant-`todo`-Liste, zum Beispiel Bring.
+Home-Assistant-Add-on-Repository fuer die Synchronisation von Alexa-
+Einkaufslisten mit einer Home-Assistant-`todo`-Liste, typischerweise Bring.
 
-Seit Version `0.8.0` koennen mehrere Amazon-Konten mit derselben Bring-/Ziel-
-Liste synchronisiert werden. Neue Bring-Eintraege werden in alle aktiven Alexa-
-Listen geschrieben, erledigte Bring-Eintraege werden aus allen aktiven Alexa-
-Listen entfernt.
+Alexa Sync nutzt vorhandene Sessions aus
+[Alexa Media Player](https://github.com/alandtse/alexa_media_player). Es werden
+keine Amazon-Zugangsdaten im Add-on gespeichert.
 
-Seit Version `0.7.0` kann das Add-on eine vorhandene Alexa-Media-Player-
-Session aus Home Assistant uebernehmen. Damit ist im Normalfall keine zweite
-Amazon-Anmeldung noetig.
+## Was das Add-on macht
 
-Seit Version `0.6.0` bringt das Add-on den Alexa-Workaround direkt mit:
-Chromium/Selenium laeuft im Add-on und liest die Alexa-Einkaufsliste mit
-importierten Amazon-Session-Cookies. Das basiert auf dem technischen Ansatz von
-[`madmachinations/home-assistant-alexa-shopping-list`](https://github.com/madmachinations/home-assistant-alexa-shopping-list),
-aber ohne separates Server-Add-on.
+- Importiert Alexa-Media-Player-Sessions aus der Home-Assistant-Konfiguration.
+- Legt daraus automatisch Amazon-Konten im Add-on an.
+- Synchronisiert mehrere Alexa-Einkaufslisten mit einer gemeinsamen
+  Home-Assistant-`todo`-Liste.
+- Kopiert neue Alexa-Eintraege in die Ziel-Liste.
+- Schreibt neue Ziel-Listen-Eintraege in alle aktiven Alexa-Listen.
+- Entfernt in der Ziel-Liste erledigte Eintraege aus den Alexa-Listen.
+
+## Voraussetzungen
+
+- Home Assistant mit Add-on-Unterstuetzung.
+- Eine vorhandene Home-Assistant-`todo`-Liste, z.B. Bring.
+- Eingerichteter Alexa Media Player mit gueltiger Amazon-Session.
+- Add-on-Architektur `amd64` oder `aarch64`.
 
 ## Installation
 
-1. In Home Assistant zu **Einstellungen > Add-ons > Add-on Store** gehen.
+1. In Home Assistant **Einstellungen > Add-ons > Add-on Store** oeffnen.
 2. Im Drei-Punkte-Menue **Repositories** waehlen.
 3. Dieses Repository hinzufuegen:
 
-   `https://github.com/think-techDE/AlexaSync`
+   ```text
+   https://github.com/think-techDE/AlexaSync
+   ```
 
 4. **Alexa Sync** installieren.
 5. Add-on starten und die **Weboberflaeche** oeffnen.
 6. Amazon-Domain, z.B. `amazon.de`, und die Bring-/Ziel-Liste auswaehlen.
-7. **Sessions uebernehmen** klicken. Das Add-on importiert die gefundenen
-   Alexa-Media-Player-Sessions, legt daraus automatisch die Amazon-Konten an
-   und speichert die aktuelle Ziel-Listen-Konfiguration mit.
+7. **Sessions uebernehmen** klicken.
 
 Beim erneuten Uebernehmen ersetzt die aktuelle Auswahl die importierten Konten.
 Nicht mehr gewuenschte Konten koennen in der Weboberflaeche entfernt werden.
 
-Die YAML-Konfiguration bleibt optional als Startwert moeglich:
+## Konfiguration
+
+Die Weboberflaeche ist der normale Weg. Die YAML-Optionen bleiben als Startwerte
+moeglich:
 
 ```yaml
-mode: internal_alexa
 amazon_domain: amazon.de
 ha_list: todo.einkaufsliste_2
 interval_seconds: 120
@@ -48,11 +56,17 @@ remove_completed: false
 log_level: info
 ```
 
-## Add-on
+## Dokumentation
 
-Der eigentliche Add-on-Code liegt in [`alexa_sync`](alexa_sync).
+- Add-on-Dokumentation: [`alexa_sync/DOCS.md`](alexa_sync/DOCS.md)
+- Add-on-Verzeichnis: [`alexa_sync`](alexa_sync)
+- Changelog: [`alexa_sync/CHANGELOG.md`](alexa_sync/CHANGELOG.md)
 
-Das Add-on nutzt den Home-Assistant-Core-API-Proxy des Supervisors. Dafuer ist
-in `alexa_sync/config.yaml` `homeassistant_api: true` gesetzt. Fuer den Import
-aus Alexa Media Player wird die Home-Assistant-Konfiguration zusaetzlich
-read-only unter `/homeassistant` eingebunden.
+## Hinweise
+
+Amazon stellt keine offizielle stabile API fuer Alexa-Einkaufslisten bereit.
+Alexa Sync oeffnet die Alexa-Einkaufsliste deshalb intern per Chromium/Selenium
+und nutzt die importierten Session-Cookies aus Alexa Media Player.
+
+Wenn Amazon eine Session beendet, muss sie in Alexa Media Player erneuert und im
+Add-on erneut uebernommen werden.
