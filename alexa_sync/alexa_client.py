@@ -561,43 +561,6 @@ def extract_alexa_media_cookies(raw_cookie_data: Any, amazon_domain: str) -> lis
     return list(cookies_by_key.values())
 
 
-def import_alexa_media_session(
-    amazon_domain: str,
-    *,
-    account_id: str = DEFAULT_ACCOUNT_ID,
-    source_name: str | None = None,
-) -> dict[str, Any]:
-    """Import cookies from Alexa Media Player's local cookie pickle."""
-    if not source_name:
-        raise RuntimeError("Bitte eine Alexa-Media-Player-Session auswaehlen.")
-    session_files = find_alexa_media_session_files()
-    session_files = [path for path in session_files if path.name == source_name]
-    if not session_files:
-        raise RuntimeError("Ausgewaehlte Alexa-Media-Player-Session nicht gefunden.")
-
-    errors: list[str] = []
-    cookie_path = account_cookie_path(account_id)
-    for session_file in session_files:
-        try:
-            raw_cookie_data = load_alexa_media_cookie_pickle(session_file)
-            cookies = extract_alexa_media_cookies(raw_cookie_data, amazon_domain)
-        except Exception as exc:
-            LOGGER.warning("Could not import Alexa Media Player session from %s", session_file.name)
-            errors.append(f"{session_file.name}: {exc}")
-            continue
-
-        if not cookies:
-            errors.append(f"{session_file.name}: keine Amazon-Cookies gefunden")
-            continue
-
-        save_cookie_list(cookies, cookie_path)
-        LOGGER.info("Imported %s cookies from Alexa Media Player session %s", len(cookies), session_file.name)
-        return {"saved": True, "cookie_count": len(cookies), "source": session_file.name}
-
-    details = f" Details: {'; '.join(errors[:3])}" if errors else ""
-    raise RuntimeError(f"Keine nutzbare Alexa-Media-Player-Session gefunden.{details}")
-
-
 def import_selected_alexa_media_sessions(settings: dict[str, Any], source_names: list[str] | None) -> dict[str, Any]:
     """Import selected Alexa Media Player sessions and create account entries."""
     from settings import SETTINGS_PATH, normalize_settings, write_json_file
@@ -746,27 +709,6 @@ class InternalAlexaClient:
     def _shopping_list_url(self) -> str:
         """Return the Alexa shopping list URL for the configured marketplace."""
         return f"https://www.{self.amazon_domain}/alexaquantum/sp/alexaShoppingList?ref=nav_asl"
-
-    def _account_url(self) -> str:
-        """Return a robust account URL that redirects to Amazon sign-in if needed."""
-        return f"https://www.{self.amazon_domain}/gp/css/homepage.html?ref_=nav_AccountFlyout_ya"
-
-    def _home_url(self) -> str:
-        """Return Amazon marketplace home URL."""
-        return f"https://www.{self.amazon_domain}/"
-
-    def open_setup_page(self) -> None:
-        """Open a login-capable Amazon page for interactive setup."""
-        if self.driver is None:
-            raise RuntimeError("Browser is not running")
-        self.driver.get(self._account_url())
-        time.sleep(3)
-        page = self.driver.page_source.lower()
-        current_url = str(self.driver.current_url).lower()
-        if "suchst du etwas" in page or "web-adresse" in page or "/errors/" in current_url:
-            LOGGER.info("Amazon account URL did not load, falling back to marketplace home")
-            self.driver.get(self._home_url())
-            time.sleep(3)
 
     def is_authenticated(self) -> bool:
         """Return if imported cookies still authenticate with Amazon."""

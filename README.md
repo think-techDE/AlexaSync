@@ -28,16 +28,12 @@ aber ohne separates Server-Add-on.
 
 4. **Alexa Sync** installieren.
 5. Add-on starten und die **Weboberflaeche** oeffnen.
-6. Sync-Modus **Alexa direkt - Home Assistant Liste** waehlen.
-7. Amazon-Domain, z.B. `amazon.de`, und die Bring-/Ziel-Liste auswaehlen.
-8. Falls Alexa Media Player bereits eingerichtet ist:
-   **Gefundene uebernehmen** klicken. Das Add-on legt daraus automatisch die
-   Amazon-Konten an und speichert die aktuelle Ziel-Listen-Konfiguration mit.
-9. Weitere Amazon-Konten bei Bedarf mit **Amazon-Konto hinzufuegen** anlegen.
-10. Sonst pro Konto **Amazon-Anmeldung oeffnen**, im eingeblendeten Amazon-
-    Browser anmelden und danach **Session uebernehmen**.
+6. Amazon-Domain, z.B. `amazon.de`, und die Bring-/Ziel-Liste auswaehlen.
+7. **Sessions uebernehmen** klicken. Das Add-on importiert die gefundenen
+   Alexa-Media-Player-Sessions, legt daraus automatisch die Amazon-Konten an
+   und speichert die aktuelle Ziel-Listen-Konfiguration mit.
 
-Die YAML-Konfiguration bleibt optional als Fallback moeglich:
+Die YAML-Konfiguration bleibt optional als Startwert moeglich:
 
 ```yaml
 mode: internal_alexa

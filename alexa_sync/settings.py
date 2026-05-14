@@ -160,49 +160,6 @@ def save_settings(settings: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
-def persist_amazon_account(settings: dict[str, Any], account: dict[str, Any]) -> dict[str, Any]:
-    """Persist one Amazon account after a successful session import."""
-    from alexa_client import account_cookie_path, sanitize_account_id  # avoid circular import
-
-    if not isinstance(account, dict):
-        raise ValueError("Amazon-Konto fehlt.")
-
-    normalized_account = normalize_amazon_accounts([account], settings["amazon_domain"])[0]
-    normalized_account["enabled"] = True
-
-    accounts = [
-        dict(existing)
-        for existing in settings.get("amazon_accounts", [])
-        if isinstance(existing, dict)
-    ]
-
-    if (
-        len(accounts) == 1
-        and sanitize_account_id(accounts[0].get("id")) == DEFAULT_ACCOUNT_ID
-        and normalized_account["id"] != DEFAULT_ACCOUNT_ID
-        and not account_cookie_path(DEFAULT_ACCOUNT_ID).exists()
-    ):
-        accounts = []
-
-    target_id = normalized_account["id"]
-    for index, existing in enumerate(accounts):
-        if sanitize_account_id(existing.get("id")) == target_id:
-            merged = dict(existing)
-            merged.update(normalized_account)
-            merged["enabled"] = True
-            accounts[index] = merged
-            break
-    else:
-        accounts.append(normalized_account)
-
-    next_settings = dict(settings)
-    next_settings["amazon_domain"] = normalized_account["amazon_domain"]
-    next_settings["amazon_accounts"] = accounts
-    normalized = normalize_settings(next_settings)
-    write_json_file(SETTINGS_PATH, normalized)
-    return normalized
-
-
 def enabled_amazon_accounts(settings: dict[str, Any]) -> list[dict[str, Any]]:
     """Return enabled Amazon accounts from settings."""
     return [account for account in settings.get("amazon_accounts", []) if account.get("enabled", True)]

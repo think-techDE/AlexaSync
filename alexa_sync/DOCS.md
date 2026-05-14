@@ -12,13 +12,9 @@
 5. Add-on starten.
 6. Die **Weboberflaeche** oeffnen.
 7. Amazon-Domain und Bring-/Ziel-Liste auswaehlen.
-8. Wenn Alexa Media Player bereits eingerichtet ist:
-   **Gefundene uebernehmen** klicken. Die gefundenen Sessions sind
-   vorausgewaehlt; das Add-on legt daraus die Amazon-Konten an und speichert die
-   aktuelle Ziel-Liste direkt mit.
-9. Weitere Amazon-Konten bei Bedarf mit **Amazon-Konto hinzufuegen** anlegen.
-10. Sonst pro Konto **Amazon-Anmeldung oeffnen**, im eingeblendeten Amazon-
-    Browser anmelden und danach **Session uebernehmen**.
+8. **Sessions uebernehmen** klicken. Die gefundenen Alexa-Media-Player-Sessions
+   sind vorausgewaehlt; das Add-on legt daraus die Amazon-Konten an und
+   speichert die aktuelle Ziel-Liste direkt mit.
 
 ## Synchronisation
 
@@ -35,10 +31,7 @@ Cookie-Mappings akzeptiert. Die Home-Assistant-Konfiguration wird dafuer nur
 read-only eingebunden. Importierbare Cookie-Dateien werden angezeigt und als
 aktiv oder ungeprueft markiert; doppelte Cookie-Dateien derselben Mailadresse
 werden zusammengefasst. Aktive Alexa-Media-Player-Config-Entries ohne Cookie-
-Datei werden sichtbar angezeigt, koennen aber nicht importiert werden. Falls
-keine passende Session vorhanden ist, oeffnet die Weboberflaeche pro Konto einen
-internen Amazon-Browser; nach erfolgreicher Anmeldung werden nur die Browser-
-Cookies persistiert.
+Datei werden sichtbar angezeigt, koennen aber nicht importiert werden.
 
 Mehrere Amazon-Konten werden gegen dieselbe `ha_list` synchronisiert:
 
@@ -60,9 +53,8 @@ remove_completed: false
 log_level: info
 ```
 
-Falls der interne Browser nicht ausreicht, koennen Cookies weiterhin in der
-Weboberflaeche importiert werden. Erwartet wird eine JSON-Liste im Format, das
-Browser-Cookie-Export-Erweiterungen typischerweise liefern.
+Wenn Amazon eine importierte Session beendet, muss die betroffene Session in
+Alexa Media Player erneuert und danach im Add-on erneut uebernommen werden.
 
 ## Voraussetzungen
 

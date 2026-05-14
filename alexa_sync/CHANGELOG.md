@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.6
+
+- Weboberflaeche auf den Alexa-Media-Player-Hauptpfad reduziert: Ziel-Liste waehlen, Sessions uebernehmen, synchronisieren.
+- Manueller Amazon-Login, Cookie-JSON-Import und manuelle Kontoverwaltung wurden aus Weboberflaeche und API entfernt.
+
 ## 0.9.5
 
 - Alexa-Media-Player-Cookie-Pickles mit modernem Cookie-Attribut `Partitioned` werden jetzt ohne Importfehler gelesen.

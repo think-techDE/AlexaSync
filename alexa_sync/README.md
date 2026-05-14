@@ -20,12 +20,12 @@ Sessions vorhanden, sind sie vorausgewaehlt; beim Uebernehmen legt das Add-on
 die Amazon-Konten automatisch an und speichert die aktuelle Ziel-Listen-
 Konfiguration mit.
 
-Die YAML-Optionen bleiben als Start-/Fallbackwerte erhalten.
+Die YAML-Optionen bleiben als Startwerte erhalten.
 
 | Option | Beschreibung |
 | --- | --- |
 | `amazon_domain` | Standard-Amazon-Domain fuer neue Konten, z.B. `amazon.de`. |
-| `amazon_accounts` | Amazon-Konten. Wird bevorzugt ueber die Weboberflaeche gepflegt. |
+| `amazon_accounts` | Aus Alexa Media Player importierte Amazon-Konten. |
 | `ha_list` | Bring-/Ziel-Liste als Home-Assistant-`todo`-Entity. |
 | `interval_seconds` | Polling-Intervall in Sekunden. |
 | `sync_completed` | Synchronisiert erledigte Eintraege. |
@@ -36,7 +36,7 @@ Die YAML-Optionen bleiben als Start-/Fallbackwerte erhalten.
 
 Amazon stellt keine offizielle stabile API fuer Alexa-Einkaufslisten bereit. Das
 Add-on speichert deshalb keine Amazon-Zugangsdaten. Der einfachste Weg ist,
-die gefundenen Alexa-Media-Player-Sessions mit **Gefundene uebernehmen** zu
+die gefundenen Alexa-Media-Player-Sessions mit **Sessions uebernehmen** zu
 importieren. Dafuer liest das Add-on nur die gewaehlten
 Alexa-Media-Player-Cookie-Dateien aus der Home-Assistant-Konfiguration und legt
 je Datei ein Amazon-Konto an. Es akzeptiert dabei verschachtelte CookieJar-
@@ -47,14 +47,5 @@ mehr zugeordnet werden koennen; doppelte Dateien derselben Mailadresse erscheine
 nur einmal. Aktive Alexa-Media-Player-Konten ohne Cookie-Datei werden angezeigt,
 koennen aber nicht aus Alexa Media Player importiert werden.
 
-Falls keine Alexa-Media-Player-Session gefunden wird, kann die Weboberflaeche
-pro Konto einen internen Amazon-Browser oeffnen. Nach der Anmeldung werden nur
-die Browser-Session-Cookies mit restriktiven Dateirechten gespeichert. Wenn
-Amazon die Session beendet, muss die Anmeldung fuer das betroffene Konto erneut
-durchlaufen oder Cookies importiert werden.
-
-Die Weboberflaeche ist in Module gegliedert: Bring-Ziel, Alexa-Media-Player-
-Sessions, Amazon-Konten, Fallback und Sync-Verhalten. Ein Konto wird nach einer
-erfolgreichen Session-Uebernahme automatisch dauerhaft gespeichert. Aktivierte
-Konten ohne Session werden als blockierend markiert, weil sie sonst nicht
-synchronisiert werden koennen.
+Wenn Amazon eine importierte Session beendet, muss die betroffene Session in
+Alexa Media Player erneuert und danach im Add-on erneut uebernommen werden.
