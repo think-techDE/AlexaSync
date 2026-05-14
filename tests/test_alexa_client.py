@@ -3,13 +3,15 @@ from __future__ import annotations
 import sys
 import time
 import unittest
-from http.cookies import SimpleCookie
+import pickle
+import tempfile
+from http.cookies import Morsel, SimpleCookie
 from http.cookiejar import Cookie
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "alexa_sync"))
 
-from alexa_client import extract_alexa_media_cookies  # noqa: E402
+from alexa_client import extract_alexa_media_cookies, load_alexa_media_cookie_pickle  # noqa: E402
 
 
 def by_name(cookies: list[dict[str, object]]) -> dict[str, dict[str, object]]:
@@ -73,6 +75,37 @@ class AlexaMediaCookieExtractionTests(unittest.TestCase):
         self.assertEqual(indexed["ubid-acbde"]["value"], "ubid-value")
         self.assertTrue(indexed["ubid-acbde"]["httpOnly"])
         self.assertEqual(indexed["ubid-acbde"]["sameSite"], "Lax")
+
+    def test_loads_cookie_pickle_with_partitioned_attribute(self) -> None:
+        original_reserved = dict(Morsel._reserved)
+        original_flags = set(Morsel._flags)
+        try:
+            Morsel._reserved["partitioned"] = "Partitioned"
+            Morsel._flags.add("partitioned")
+            simple_cookie = SimpleCookie()
+            simple_cookie["session-id"] = "session-value"
+            simple_cookie["session-id"]["domain"] = ".amazon.de"
+            simple_cookie["session-id"]["partitioned"] = True
+            payload = pickle.dumps(simple_cookie)
+
+            Morsel._reserved.clear()
+            Morsel._reserved.update(original_reserved)
+            Morsel._flags.clear()
+            Morsel._flags.update(original_flags)
+
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                path = Path(tmp_dir) / "alexa_media.test@example.com.pickle"
+                path.write_bytes(payload)
+                loaded = load_alexa_media_cookie_pickle(path)
+
+            cookies = extract_alexa_media_cookies(loaded, "amazon.de")
+            indexed = by_name(cookies)
+            self.assertEqual(indexed["session-id"]["value"], "session-value")
+        finally:
+            Morsel._reserved.clear()
+            Morsel._reserved.update(original_reserved)
+            Morsel._flags.clear()
+            Morsel._flags.update(original_flags)
 
 
 if __name__ == "__main__":

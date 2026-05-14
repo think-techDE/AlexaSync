@@ -304,6 +304,28 @@ def find_alexa_media_session_files() -> list[Path]:
     return filtered
 
 
+def allow_modern_cookie_attributes() -> None:
+    """Allow unpickling AMP cookies with browser attributes missing in older Python."""
+    from http.cookies import Morsel
+
+    extra_attributes = {
+        "partitioned": "Partitioned",
+        "priority": "Priority",
+        "sameparty": "SameParty",
+    }
+    for key, label in extra_attributes.items():
+        Morsel._reserved.setdefault(key, label)
+    if isinstance(getattr(Morsel, "_flags", None), set):
+        Morsel._flags.update({"partitioned", "sameparty"})
+
+
+def load_alexa_media_cookie_pickle(path: Path) -> Any:
+    """Load an Alexa Media Player cookie pickle with cookie attribute compatibility."""
+    allow_modern_cookie_attributes()
+    with path.open("rb") as cookie_file:
+        return pickle.load(cookie_file)
+
+
 def is_cookie_dict(value: Any) -> bool:
     """Return whether a value already looks like a browser cookie dict."""
     return isinstance(value, dict) and "name" in value and "value" in value
@@ -557,8 +579,7 @@ def import_alexa_media_session(
     cookie_path = account_cookie_path(account_id)
     for session_file in session_files:
         try:
-            with session_file.open("rb") as cookie_file:
-                raw_cookie_data = pickle.load(cookie_file)
+            raw_cookie_data = load_alexa_media_cookie_pickle(session_file)
             cookies = extract_alexa_media_cookies(raw_cookie_data, amazon_domain)
         except Exception as exc:
             LOGGER.warning("Could not import Alexa Media Player session from %s", session_file.name)
@@ -618,8 +639,7 @@ def import_selected_alexa_media_sessions(settings: dict[str, Any], source_names:
         base_id = sanitize_account_id(label)
         account_id = base_id if base_id in accounts_by_id else unique_account_id(base_id, used_ids)
         try:
-            with session_file.open("rb") as cookie_file:
-                raw_cookie_data = pickle.load(cookie_file)
+            raw_cookie_data = load_alexa_media_cookie_pickle(session_file)
             cookies = extract_alexa_media_cookies(raw_cookie_data, settings["amazon_domain"])
         except Exception as exc:
             LOGGER.warning("Could not import Alexa Media Player session from %s", session_file.name)

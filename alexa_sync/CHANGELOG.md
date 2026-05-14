@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.5
+
+- Alexa-Media-Player-Cookie-Pickles mit modernem Cookie-Attribut `Partitioned` werden jetzt ohne Importfehler gelesen.
+
 ## 0.9.4
 
 - Alexa-Media-Player-Sessionimport erkennt jetzt auch einfache AlexaPy-Cookie-Mappings neben verschachtelten CookieJar-Pickles.
