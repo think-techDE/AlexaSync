@@ -96,6 +96,8 @@ def normalize_amazon_domain(value: Any) -> str:
 def normalize_amazon_accounts(raw_accounts: Any, legacy_domain: str) -> list[dict[str, Any]]:
     """Normalize configured Amazon accounts."""
     from alexa_client import unique_account_id  # avoid circular import at module level
+    if raw_accounts == []:
+        return []
     if not isinstance(raw_accounts, list) or not raw_accounts:
         raw_accounts = [
             {
@@ -167,8 +169,6 @@ def enabled_amazon_accounts(settings: dict[str, Any]) -> list[dict[str, Any]]:
 
 def validate_settings(settings: dict[str, Any]) -> None:
     """Validate settings."""
-    if not enabled_amazon_accounts(settings):
-        raise ValueError("Bitte mindestens ein Amazon-Konto aktivieren.")
     for account in enabled_amazon_accounts(settings):
         if not account["amazon_domain"]:
             raise ValueError(f"Bitte Amazon-Domain fuer {account['name']} eintragen.")

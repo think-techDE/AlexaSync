@@ -33,6 +33,9 @@ aber ohne separates Server-Add-on.
    Alexa-Media-Player-Sessions, legt daraus automatisch die Amazon-Konten an
    und speichert die aktuelle Ziel-Listen-Konfiguration mit.
 
+Beim erneuten Uebernehmen ersetzt die aktuelle Auswahl die importierten Konten.
+Nicht mehr gewuenschte Konten koennen in der Weboberflaeche entfernt werden.
+
 Die YAML-Konfiguration bleibt optional als Startwert moeglich:
 
 ```yaml

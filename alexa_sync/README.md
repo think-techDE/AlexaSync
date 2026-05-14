@@ -18,7 +18,9 @@ Alexa Media Player bereits in Home Assistant eingerichtet ist, kann dessen
 Session per Knopfdruck uebernommen werden. Sind mehrere Alexa-Media-Player-
 Sessions vorhanden, sind sie vorausgewaehlt; beim Uebernehmen legt das Add-on
 die Amazon-Konten automatisch an und speichert die aktuelle Ziel-Listen-
-Konfiguration mit.
+Konfiguration mit. Ein erneutes Uebernehmen ersetzt die importierte Kontenliste
+durch die aktuell ausgewaehlten Sessions; einzelne importierte Konten koennen
+in der Weboberflaeche entfernt werden.
 
 Die YAML-Optionen bleiben als Startwerte erhalten.
 

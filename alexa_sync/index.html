@@ -206,8 +206,16 @@
     }
 
     .account-row {
+      align-items: center;
+      display: grid;
+      gap: 10px;
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .account-info {
       display: grid;
       gap: 4px;
+      min-width: 0;
     }
 
     .title-line {
@@ -291,6 +299,15 @@
       background: var(--accent-hover);
     }
 
+    button.subtle {
+      background: transparent;
+    }
+
+    button.danger:hover {
+      border-color: var(--danger);
+      color: var(--danger);
+    }
+
     .status-panel {
       padding: 18px;
       position: sticky;
@@ -364,7 +381,8 @@
       }
 
       .field-grid,
-      .session-row {
+      .session-row,
+      .account-row {
         grid-template-columns: 1fr;
       }
 
@@ -573,11 +591,14 @@
         const row = document.createElement("div");
         row.className = "account-row";
         row.innerHTML = `
-          <span class="title-line">
-            <strong>${escapeHtml(account.name || "Amazon Konto")}</strong>
-            ${hasSession ? '<span class="pill ok">Session</span>' : '<span class="pill error">fehlt</span>'}
+          <span class="account-info">
+            <span class="title-line">
+              <strong>${escapeHtml(account.name || "Amazon Konto")}</strong>
+              ${hasSession ? '<span class="pill ok">Session</span>' : '<span class="pill error">fehlt</span>'}
+            </span>
+            <span class="status-text">${escapeHtml(account.amazon_domain || currentSettings.amazon_domain || "amazon.de")} - ${hasSession ? `${status.cookie_count || 0} Cookies gespeichert` : "Keine Cookies gespeichert"}</span>
           </span>
-          <span class="status-text">${escapeHtml(account.amazon_domain || currentSettings.amazon_domain || "amazon.de")} - ${hasSession ? `${status.cookie_count || 0} Cookies gespeichert` : "Keine Cookies gespeichert"}</span>
+          <button class="danger subtle" type="button" data-remove-account="${escapeHtml(account.id)}">Entfernen</button>
         `;
         accountList.appendChild(row);
       }
@@ -620,20 +641,31 @@
       };
     }
 
-    async function saveConfig(event) {
-      event.preventDefault();
+    async function saveSettings(settings, okMessage) {
       const res = await fetch("api/config", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
-        body: JSON.stringify(draftSettings())
+        body: JSON.stringify(settings)
       });
       const data = await res.json();
       if (!data.ok) {
         setMessage(data.error || "Speichern fehlgeschlagen", "error");
-        return;
+        return false;
       }
-      setMessage("Gespeichert.", "ok");
+      if (okMessage) setMessage(okMessage, "ok");
       await loadConfig();
+      return true;
+    }
+
+    async function saveConfig(event) {
+      event.preventDefault();
+      await saveSettings(draftSettings(), "Gespeichert.");
+    }
+
+    async function removeAccount(accountId) {
+      const nextSettings = draftSettings();
+      nextSettings.amazon_accounts = (currentSettings.amazon_accounts || []).filter((account) => account.id !== accountId);
+      await saveSettings(nextSettings, "Konto entfernt.");
     }
 
     async function importSelectedAmpSessions() {
@@ -668,6 +700,10 @@
     document.getElementById("config-form").addEventListener("submit", saveConfig);
     document.getElementById("sync-now").addEventListener("click", syncNow);
     document.getElementById("import-amp-selected").addEventListener("click", importSelectedAmpSessions);
+    accountList.addEventListener("click", (event) => {
+      const button = event.target.closest("button[data-remove-account]");
+      if (button) removeAccount(button.dataset.removeAccount);
+    });
 
     loadConfig().catch((err) => setMessage(err.message, "error"));
   </script>

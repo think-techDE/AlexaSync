@@ -8,10 +8,15 @@ import tempfile
 from http.cookies import Morsel, SimpleCookie
 from http.cookiejar import Cookie
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "alexa_sync"))
 
-from alexa_client import extract_alexa_media_cookies, load_alexa_media_cookie_pickle  # noqa: E402
+from alexa_client import (  # noqa: E402
+    extract_alexa_media_cookies,
+    import_selected_alexa_media_sessions,
+    load_alexa_media_cookie_pickle,
+)
 
 
 def by_name(cookies: list[dict[str, object]]) -> dict[str, dict[str, object]]:
@@ -106,6 +111,44 @@ class AlexaMediaCookieExtractionTests(unittest.TestCase):
             Morsel._reserved.update(original_reserved)
             Morsel._flags.clear()
             Morsel._flags.update(original_flags)
+
+    def test_selected_session_import_replaces_existing_accounts(self) -> None:
+        settings = {
+            "amazon_domain": "amazon.de",
+            "amazon_accounts": [
+                {
+                    "id": "marina",
+                    "name": "Marina",
+                    "amazon_domain": "amazon.de",
+                    "enabled": True,
+                },
+                {
+                    "id": "ben@think-tech.eu",
+                    "name": "ben@think-tech.eu",
+                    "amazon_domain": "amazon.de",
+                    "enabled": True,
+                },
+            ],
+            "ha_list": "todo.einkauf",
+        }
+        session_files = [
+            Path("alexa_media.ben@think-tech.eu.pickle"),
+            Path("alexa_media.mary_mausi025@web.de.pickle"),
+        ]
+
+        with (
+            patch("alexa_client.find_alexa_media_session_files", return_value=session_files),
+            patch("alexa_client.load_alexa_media_cookie_pickle", return_value={"session-id": "session-value"}),
+            patch("alexa_client.save_cookie_list"),
+            patch("settings.write_json_file"),
+        ):
+            result = import_selected_alexa_media_sessions(
+                settings,
+                [path.name for path in session_files],
+            )
+
+        account_ids = [account["id"] for account in result["settings"]["amazon_accounts"]]
+        self.assertEqual(account_ids, ["ben@think-tech.eu", "mary_mausi025@web.de"])
 
 
 if __name__ == "__main__":

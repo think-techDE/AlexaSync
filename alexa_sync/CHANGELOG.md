@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.7
+
+- Alexa-Media-Player-Import ersetzt jetzt die importierte Kontenliste durch die aktuell ausgewaehlten Sessions, statt alte Eintraege mitzuschleppen.
+- Importierte Konten koennen in der Weboberflaeche wieder entfernt werden.
+
 ## 0.9.6
 
 - Weboberflaeche auf den Alexa-Media-Player-Hauptpfad reduziert: Ziel-Liste waehlen, Sessions uebernehmen, synchronisieren.

@@ -582,25 +582,20 @@ def import_selected_alexa_media_sessions(settings: dict[str, Any], source_names:
         raise RuntimeError("Keine importierbare Alexa-Media-Player-Session gefunden.")
 
     existing_accounts = list(settings.get("amazon_accounts") or [])
-    if (
-        len(existing_accounts) == 1
-        and existing_accounts[0].get("id") == DEFAULT_ACCOUNT_ID
-        and not account_cookie_path(DEFAULT_ACCOUNT_ID).exists()
-    ):
-        existing_accounts = []
-    used_ids = {sanitize_account_id(account.get("id")) for account in existing_accounts if isinstance(account, dict)}
-    accounts_by_id = {
+    existing_accounts_by_id = {
         sanitize_account_id(account.get("id")): dict(account)
         for account in existing_accounts
         if isinstance(account, dict)
     }
+    used_ids: set[str] = set()
+    next_accounts: list[dict[str, Any]] = []
     imported: list[dict[str, Any]] = []
     errors: list[str] = []
 
     for session_file in session_files:
         label = alexa_media_session_label(session_file)
         base_id = sanitize_account_id(label)
-        account_id = base_id if base_id in accounts_by_id else unique_account_id(base_id, used_ids)
+        account_id = unique_account_id(base_id, used_ids)
         try:
             raw_cookie_data = load_alexa_media_cookie_pickle(session_file)
             cookies = extract_alexa_media_cookies(raw_cookie_data, settings["amazon_domain"])
@@ -614,7 +609,7 @@ def import_selected_alexa_media_sessions(settings: dict[str, Any], source_names:
             continue
 
         save_cookie_list(cookies, account_cookie_path(account_id))
-        account = accounts_by_id.get(account_id) or {}
+        account = existing_accounts_by_id.get(account_id) or {}
         account.update(
             {
                 "id": account_id,
@@ -623,14 +618,14 @@ def import_selected_alexa_media_sessions(settings: dict[str, Any], source_names:
                 "enabled": True,
             }
         )
-        accounts_by_id[account_id] = account
+        next_accounts.append(account)
         imported.append({"account_id": account_id, "name": account["name"], "source": session_file.name})
 
     if not imported:
         details = f" Details: {'; '.join(errors[:3])}" if errors else ""
         raise RuntimeError(f"Keine nutzbare Alexa-Media-Player-Session gefunden.{details}")
 
-    settings["amazon_accounts"] = normalize_amazon_accounts(list(accounts_by_id.values()), settings["amazon_domain"])
+    settings["amazon_accounts"] = normalize_amazon_accounts(next_accounts, settings["amazon_domain"])
     normalized = normalize_settings(settings)
     write_json_file(SETTINGS_PATH, normalized)
     return {"imported": imported, "errors": errors, "settings": normalized}

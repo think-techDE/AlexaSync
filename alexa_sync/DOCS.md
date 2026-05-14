@@ -16,6 +16,10 @@
    sind vorausgewaehlt; das Add-on legt daraus die Amazon-Konten an und
    speichert die aktuelle Ziel-Liste direkt mit.
 
+Beim erneuten Uebernehmen ersetzt die aktuelle Auswahl die importierte
+Kontenliste. Einzelne importierte Konten koennen in der Weboberflaeche entfernt
+werden.
+
 ## Synchronisation
 
 Die Synchronisation laeuft komplett in diesem Add-on. Chromium/Selenium oeffnet
