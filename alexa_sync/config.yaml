@@ -1,5 +1,5 @@
 name: Alexa Sync
-version: "0.8.4"
+version: "0.8.3"
 slug: alexa_sync
 description: Synchronize the Alexa shopping list with a Home Assistant to-do list.
 url: https://github.com/think-techDE/AlexaSync
@@ -18,24 +18,14 @@ ingress_port: 8099
 ingress_panel: true
 panel_icon: mdi:cart-sync
 options:
-  list_a: ""
-  list_b: ""
-  mode: internal_alexa
   amazon_domain: amazon.de
-  alexa_server_host: ""
-  alexa_server_port: 4000
   ha_list: ""
   interval_seconds: 120
   sync_completed: true
   remove_completed: false
   log_level: info
 schema:
-  list_a: str?
-  list_b: str?
-  mode: list(internal_alexa|ha_todo_pair|alexa_server)
   amazon_domain: str
-  alexa_server_host: str?
-  alexa_server_port: port
   ha_list: str?
   interval_seconds: int(30,3600)
   sync_completed: bool

@@ -1,0 +1,867 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Alexa Sync</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f7f8fa;
+      --panel: #ffffff;
+      --text: #17202a;
+      --muted: #5d6875;
+      --border: #d8dde3;
+      --accent: #0b6bcb;
+      --accent-contrast: #ffffff;
+      --danger: #b42318;
+      --ok: #067647;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #111418;
+        --panel: #1b2027;
+        --text: #eef2f6;
+        --muted: #aeb8c4;
+        --border: #303946;
+        --accent: #5aa7ff;
+        --accent-contrast: #07111f;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 15px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    main {
+      width: min(860px, calc(100% - 32px));
+      margin: 32px auto;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 28px;
+      font-weight: 650;
+    }
+    p {
+      margin: 0 0 24px;
+      color: var(--muted);
+    }
+    .mode-row {
+      display: grid;
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+    details {
+      margin: 14px 0 18px;
+    }
+    summary {
+      color: var(--accent);
+      cursor: pointer;
+      font-weight: 650;
+      width: fit-content;
+    }
+    .radio {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      font-weight: 600;
+    }
+    .radio span {
+      display: block;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 400;
+      margin-top: 2px;
+    }
+    form, .status {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    .module {
+      border-top: 1px solid var(--border);
+      padding: 22px 0;
+    }
+    .module:first-child {
+      border-top: 0;
+      padding-top: 0;
+    }
+    .module-header {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .module-header h2 {
+      font-size: 18px;
+      line-height: 1.2;
+      margin: 0 0 4px;
+    }
+    .module-header p {
+      font-size: 13px;
+      margin: 0;
+    }
+    .step {
+      align-items: center;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      display: inline-flex;
+      flex: 0 0 auto;
+      font-weight: 700;
+      height: 28px;
+      justify-content: center;
+      width: 28px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+    label {
+      display: block;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    select, input[type="number"], input[type="text"], input[type="password"], textarea {
+      width: 100%;
+      min-height: 42px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--panel);
+      color: var(--text);
+      padding: 8px 10px;
+      font: inherit;
+    }
+    textarea {
+      min-height: 120px;
+      resize: vertical;
+    }
+    .account-list {
+      display: grid;
+      gap: 12px;
+      margin-top: 14px;
+    }
+    .account-card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+    }
+    .account-card.warning {
+      border-color: var(--danger);
+    }
+    .account-grid {
+      display: grid;
+      grid-template-columns: minmax(160px, 1fr) minmax(140px, 1fr);
+      gap: 12px;
+      align-items: end;
+    }
+    .account-status {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 10px;
+    }
+    .account-card .actions {
+      margin-top: 12px;
+    }
+    .session-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .session-row {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 9px 10px;
+      font-weight: 500;
+    }
+    .session-row.disabled {
+      opacity: 0.72;
+    }
+    .session-main {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+    .session-title {
+      display: block;
+    }
+    .session-status {
+      color: var(--muted);
+      display: block;
+      font-size: 12px;
+      margin-top: 2px;
+    }
+    .badge {
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 650;
+      margin-left: 8px;
+      padding: 1px 7px;
+      vertical-align: middle;
+    }
+    .badge.ok { color: var(--ok); }
+    .badge.warn { color: var(--danger); }
+    .setup-browser {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-top: 14px;
+      overflow: hidden;
+      background: #000;
+      display: none;
+    }
+    .setup-browser img {
+      display: block;
+      width: 100%;
+      height: auto;
+      cursor: crosshair;
+      user-select: none;
+    }
+    .setup-hint {
+      color: var(--muted);
+      margin: 10px 0 0;
+      font-size: 13px;
+    }
+    .checks {
+      display: grid;
+      gap: 10px;
+      margin-top: 16px;
+    }
+    .check {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      font-weight: 500;
+    }
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 20px;
+    }
+    .module-actions {
+      margin-top: 12px;
+    }
+    button {
+      min-height: 42px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--panel);
+      color: var(--text);
+      padding: 8px 14px;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button.primary {
+      border-color: var(--accent);
+      background: var(--accent);
+      color: var(--accent-contrast);
+    }
+    .message {
+      min-height: 22px;
+      margin-top: 14px;
+      color: var(--muted);
+    }
+    .message.error { color: var(--danger); }
+    .message.ok { color: var(--ok); }
+    dl {
+      display: grid;
+      grid-template-columns: 180px 1fr;
+      gap: 8px 12px;
+      margin: 0;
+    }
+    dt { color: var(--muted); }
+    dd { margin: 0; }
+    @media (max-width: 700px) {
+      .grid, .account-grid, dl { grid-template-columns: 1fr; }
+      main { margin: 20px auto; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Alexa Sync</h1>
+    <p>Alexa per Sprache befuellen, in Bring abhaken. Waehle deine Bring-Liste und verbinde ein oder mehrere Amazon-Konten.</p>
+
+    <form id="config-form">
+      <section class="module">
+        <div class="module-header">
+          <span class="step">1</span>
+          <div>
+            <h2>Ziel & Modus</h2>
+            <p>Im Standardfall reicht die Bring-/Ziel-Liste. Erweiterte Modi bleiben fuer Spezialfaelle verfuegbar.</p>
+          </div>
+        </div>
+        <div class="mode-row">
+          <label class="radio">
+            <input type="radio" name="mode" value="internal_alexa">
+            <span><strong>Alexa direkt mit Bring synchronisieren</strong><br>Empfohlen. Ein Add-on, keine zweite Server-Komponente.</span>
+          </label>
+        </div>
+        <details>
+          <summary>Erweiterte Modi</summary>
+          <div class="mode-row">
+            <label class="radio">
+              <input type="radio" name="mode" value="ha_todo_pair">
+              <span><strong>Home Assistant Liste - Home Assistant Liste</strong><br>Fuer Bring, lokale Listen oder andere vorhandene `todo.*`-Entities.</span>
+            </label>
+            <label class="radio">
+              <input type="radio" name="mode" value="alexa_server">
+              <span><strong>Externer Alexa Shopping List Server - Home Assistant Liste</strong><br>Kompatibilitaetsmodus fuer bestehende Installationen.</span>
+            </label>
+          </div>
+        </details>
+        <div class="grid">
+          <div class="internal-alexa-field">
+            <label for="amazon-domain">Standard-Domain fuer neue Konten</label>
+            <input id="amazon-domain" name="amazon_domain" type="text" placeholder="amazon.de">
+          </div>
+          <div class="internal-alexa-field">
+            <label for="internal-ha-list">Bring-/Ziel-Liste</label>
+            <select id="internal-ha-list" name="internal_ha_list"></select>
+          </div>
+          <div class="ha-pair-field">
+            <label for="list-a">Liste A</label>
+            <select id="list-a" name="list_a"></select>
+          </div>
+          <div class="ha-pair-field">
+            <label for="list-b">Liste B</label>
+            <select id="list-b" name="list_b"></select>
+          </div>
+          <div class="alexa-field">
+            <label for="alexa-host">Alexa-Server Host/IP</label>
+            <input id="alexa-host" name="alexa_server_host" type="text" placeholder="192.168.1.10">
+          </div>
+          <div class="alexa-field">
+            <label for="alexa-port">Alexa-Server Port</label>
+            <input id="alexa-port" name="alexa_server_port" type="number" min="1" max="65535" step="1">
+          </div>
+          <div class="alexa-field">
+            <label for="ha-list">Home-Assistant-Liste</label>
+            <select id="ha-list" name="ha_list"></select>
+          </div>
+          <div>
+            <label for="interval">Sync-Intervall in Sekunden</label>
+            <input id="interval" name="interval_seconds" type="number" min="10" max="3600" step="5">
+          </div>
+        </div>
+      </section>
+
+      <section class="module internal-alexa-field">
+        <div class="module-header">
+          <span class="step">2</span>
+          <div>
+            <h2>Alexa Media Player</h2>
+            <p>Markiere nur die Sessions, die wirklich mit Bring synchronisiert werden sollen.</p>
+          </div>
+        </div>
+        <p id="amp-status" class="setup-hint"></p>
+        <div id="amp-session-list" class="session-list"></div>
+        <div class="actions module-actions">
+          <button id="import-amp-selected" type="button">Ausgewaehlte aus Alexa Media Player uebernehmen</button>
+        </div>
+      </section>
+
+      <section class="module internal-alexa-field">
+        <div class="module-header">
+          <span class="step">3</span>
+          <div>
+            <h2>Amazon-Konten</h2>
+            <p>Nur aktive Konten mit gespeicherter Session werden synchronisiert.</p>
+          </div>
+        </div>
+        <div class="actions module-actions">
+          <button id="add-account" type="button">Amazon-Konto hinzufuegen</button>
+          <button id="setup-save" type="button">Session uebernehmen</button>
+          <button id="setup-stop" type="button">Browser schliessen</button>
+        </div>
+        <p class="setup-hint">Jedes aktivierte Amazon-Konto wird mit derselben Bring-/Ziel-Liste synchronisiert. Neue Bring-Eintraege werden in alle aktiven Alexa-Listen geschrieben; erledigte Eintraege werden aus allen aktiven Alexa-Listen entfernt.</p>
+        <div id="account-list" class="account-list"></div>
+        <div id="setup-browser" class="setup-browser">
+          <img id="setup-screenshot" alt="Amazon Login Browser">
+        </div>
+      </section>
+
+      <details class="module internal-alexa-field">
+        <summary>Fallback: Amazon-Session-Cookies als JSON importieren</summary>
+        <select id="cookie-account"></select>
+        <textarea id="cookies" placeholder='[{"name":"session-id","value":"...","domain":".amazon.de"}]'></textarea>
+        <div class="actions module-actions">
+          <button id="save-cookies" type="button">Cookies importieren</button>
+        </div>
+      </details>
+
+      <section class="module">
+        <div class="module-header">
+          <span class="step">4</span>
+          <div>
+            <h2>Sync-Verhalten</h2>
+            <p>Diese Optionen steuern, wie erledigte Artikel behandelt werden.</p>
+          </div>
+        </div>
+        <div class="checks">
+          <label class="check"><input id="sync-completed" name="sync_completed" type="checkbox"> Abgehakte Eintraege synchronisieren</label>
+          <label class="check"><input id="remove-completed" name="remove_completed" type="checkbox"> Abgehakte Eintraege nach dem Sync aus beiden Listen entfernen</label>
+        </div>
+      </section>
+      <div class="actions">
+        <button class="primary" type="submit">Speichern</button>
+        <button id="sync-now" type="button">Jetzt synchronisieren</button>
+      </div>
+      <div id="message" class="message"></div>
+    </form>
+
+    <section class="status">
+      <dl>
+        <dt>Status</dt><dd id="status-configured">-</dd>
+        <dt>Letzter Sync</dt><dd id="status-last-sync">-</dd>
+        <dt>Letzte Schreibvorgaenge</dt><dd id="status-writes">-</dd>
+        <dt>Letzter Fehler</dt><dd id="status-error">-</dd>
+      </dl>
+    </section>
+  </main>
+
+  <script>
+    const listA = document.getElementById("list-a");
+    const listB = document.getElementById("list-b");
+    const haList = document.getElementById("ha-list");
+    const internalHaList = document.getElementById("internal-ha-list");
+    const amazonDomain = document.getElementById("amazon-domain");
+    const alexaHost = document.getElementById("alexa-host");
+    const alexaPort = document.getElementById("alexa-port");
+    const interval = document.getElementById("interval");
+    const syncCompleted = document.getElementById("sync-completed");
+    const removeCompleted = document.getElementById("remove-completed");
+    const message = document.getElementById("message");
+    const cookies = document.getElementById("cookies");
+    const accountList = document.getElementById("account-list");
+    const cookieAccount = document.getElementById("cookie-account");
+    const ampSessionList = document.getElementById("amp-session-list");
+    const setupBrowser = document.getElementById("setup-browser");
+    const setupScreenshot = document.getElementById("setup-screenshot");
+    const ampStatus = document.getElementById("amp-status");
+    const modeInputs = [...document.querySelectorAll('input[name="mode"]')];
+    let accountStatuses = [];
+    let alexaMediaSessions = [];
+    let setupFocused = false;
+    let setupSize = {width: 1366, height: 768};
+
+    function setMessage(text, type = "") {
+      message.textContent = text;
+      message.className = `message ${type}`.trim();
+    }
+
+    function option(value, label) {
+      const opt = document.createElement("option");
+      opt.value = value;
+      opt.textContent = label;
+      return opt;
+    }
+
+    function fillSelect(select, entities, selected) {
+      select.replaceChildren(option("", "Bitte auswaehlen"));
+      for (const entity of entities) {
+        select.appendChild(option(entity.entity_id, `${entity.name} (${entity.entity_id})`));
+      }
+      select.value = selected || "";
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+      }[char]));
+    }
+
+    function newAccountId() {
+      return `konto_${Date.now()}_${Math.random().toString(16).slice(2, 6)}`;
+    }
+
+    function statusForAccount(accountId) {
+      return accountStatuses.find((status) => status.id === accountId) || {};
+    }
+
+    function accountFromCard(card) {
+      return {
+        id: card.dataset.accountId || newAccountId(),
+        name: card.querySelector(".account-name").value.trim() || "Amazon Konto",
+        amazon_domain: card.querySelector(".account-domain").value.trim() || amazonDomain.value || "amazon.de",
+        enabled: card.querySelector(".account-enabled").checked
+      };
+    }
+
+    function collectAccounts() {
+      return [...accountList.querySelectorAll(".account-card")].map(accountFromCard);
+    }
+
+    function renderCookieAccountSelect(accounts) {
+      cookieAccount.replaceChildren();
+      for (const account of accounts) {
+        cookieAccount.appendChild(option(account.id, account.name));
+      }
+    }
+
+    function renderAlexaMediaSessions() {
+      ampSessionList.replaceChildren();
+      for (const session of alexaMediaSessions) {
+        const label = document.createElement("label");
+        label.className = "session-row";
+        if (!session.importable) label.classList.add("disabled");
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.value = session.name;
+        checkbox.disabled = !session.importable;
+        const content = document.createElement("span");
+        content.className = "session-main";
+        const title = document.createElement("span");
+        title.className = "session-title";
+        title.textContent = session.label || session.name;
+        const badge = document.createElement("span");
+        badge.className = `badge ${session.active ? "ok" : "warn"}`;
+        badge.textContent = session.importable
+          ? (session.active ? "aktiv" : "ungeprueft")
+          : "ohne Datei";
+        const status = document.createElement("span");
+        status.className = "session-status";
+        status.textContent = session.status || "";
+        title.appendChild(badge);
+        content.append(title, status);
+        label.append(checkbox, content);
+        ampSessionList.appendChild(label);
+      }
+    }
+
+    function selectedAlexaMediaSessions() {
+      return [...ampSessionList.querySelectorAll('input[type="checkbox"]:checked')].map((input) => input.value);
+    }
+
+    function renderAccounts(accounts) {
+      const normalized = accounts && accounts.length ? accounts : [{
+        id: "default",
+        name: "Amazon Konto 1",
+        amazon_domain: amazonDomain.value || "amazon.de",
+        enabled: true
+      }];
+      accountList.replaceChildren();
+      for (const account of normalized) {
+        const status = statusForAccount(account.id);
+        const isEnabled = account.enabled !== false;
+        const statusText = status.cookie_present
+          ? `Session gespeichert (${status.cookie_count || 0} Cookies)`
+          : (isEnabled ? "Aktiv, aber ohne Session - Sync wartet auf dieses Konto" : "Inaktiv, noch keine Session gespeichert");
+        const card = document.createElement("div");
+        card.className = "account-card";
+        if (isEnabled && !status.cookie_present) card.classList.add("warning");
+        card.dataset.accountId = account.id || newAccountId();
+        const sessionOptions = alexaMediaSessions.filter((session) => session.importable).map((session) => (
+          `<option value="${escapeHtml(session.name)}">${escapeHtml(session.label || session.name)}</option>`
+        )).join("");
+        card.innerHTML = `
+          <div class="account-grid">
+            <label>Kontoname
+              <input class="account-name" type="text" value="${escapeHtml(account.name)}">
+            </label>
+            <label>Amazon-Domain
+              <input class="account-domain" type="text" value="${escapeHtml(account.amazon_domain || amazonDomain.value || "amazon.de")}">
+            </label>
+            <label>Alexa-Media-Player-Session
+              <select class="account-session">
+                <option value="">Bitte auswaehlen</option>
+                ${sessionOptions}
+              </select>
+            </label>
+            <label class="check">
+              <input class="account-enabled" type="checkbox" ${account.enabled === false ? "" : "checked"}>
+              Konto aktiv
+            </label>
+          </div>
+          <div class="account-status">${escapeHtml(statusText)}</div>
+          <div class="actions">
+            <button type="button" data-action="import">Session aus Alexa Media Player uebernehmen</button>
+            <button type="button" data-action="login">Amazon-Anmeldung oeffnen</button>
+            <button type="button" data-action="check">Session pruefen</button>
+            <button type="button" data-action="remove">Entfernen</button>
+          </div>
+        `;
+        accountList.appendChild(card);
+      }
+      renderCookieAccountSelect(normalized);
+    }
+
+    function renderStatus(status) {
+      document.getElementById("status-configured").textContent = status.configured ? "konfiguriert" : "nicht konfiguriert";
+      document.getElementById("status-last-sync").textContent = status.last_sync ? new Date(status.last_sync * 1000).toLocaleString() : "-";
+      document.getElementById("status-writes").textContent = status.last_writes ?? "-";
+      document.getElementById("status-error").textContent = status.last_error || "-";
+    }
+
+    function selectedMode() {
+      return document.querySelector('input[name="mode"]:checked')?.value || "internal_alexa";
+    }
+
+    function applyModeVisibility() {
+      const mode = selectedMode();
+      document.querySelectorAll(".ha-pair-field").forEach((el) => {
+        el.style.display = mode === "ha_todo_pair" ? "" : "none";
+      });
+      document.querySelectorAll(".alexa-field").forEach((el) => {
+        el.style.display = mode === "alexa_server" ? "" : "none";
+      });
+      document.querySelectorAll(".internal-alexa-field").forEach((el) => {
+        el.style.display = mode === "internal_alexa" ? "" : "none";
+      });
+    }
+
+    async function loadConfig() {
+      const res = await fetch("api/config");
+      const data = await res.json();
+      const settings = data.settings;
+      const mode = settings.mode || "internal_alexa";
+      const suggestedList = data.suggested_ha_list || "";
+      accountStatuses = data.amazon_accounts_status || [];
+      alexaMediaSessions = data.alexa_media_sessions || [];
+      document.querySelector(`input[name="mode"][value="${mode}"]`).checked = true;
+      fillSelect(listA, data.todo_entities, settings.list_a);
+      fillSelect(listB, data.todo_entities, settings.list_b);
+      fillSelect(haList, data.todo_entities, settings.ha_list);
+      fillSelect(internalHaList, data.todo_entities, settings.ha_list || suggestedList);
+      amazonDomain.value = settings.amazon_domain || "amazon.de";
+      alexaHost.value = settings.alexa_server_host || "";
+      alexaPort.value = settings.alexa_server_port || 4000;
+      interval.value = settings.interval_seconds;
+      syncCompleted.checked = settings.sync_completed;
+      removeCompleted.checked = settings.remove_completed;
+      const importableSessions = alexaMediaSessions.filter((session) => session.importable);
+      const missingSessions = alexaMediaSessions.filter((session) => !session.importable);
+      ampStatus.textContent = importableSessions.length
+        ? `${importableSessions.length} importierbare Alexa-Media-Player-Session(s) gefunden.`
+        : "Keine importierbare Alexa-Media-Player-Session gefunden. Der Login-Browser bleibt als Fallback verfuegbar.";
+      if (missingSessions.length) {
+        ampStatus.textContent += ` ${missingSessions.length} aktive(r) Alexa-Media-Player-Account(s) ohne Cookie-Datei.`;
+      }
+      renderAlexaMediaSessions();
+      renderAccounts(settings.amazon_accounts || []);
+      applyModeVisibility();
+      renderStatus(data.status);
+      if (data.entity_error) setMessage(data.entity_error, "error");
+    }
+
+    document.getElementById("config-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const payload = {
+        mode: selectedMode(),
+        amazon_domain: amazonDomain.value,
+        amazon_accounts: collectAccounts(),
+        list_a: listA.value,
+        list_b: listB.value,
+        alexa_server_host: alexaHost.value,
+        alexa_server_port: Number(alexaPort.value),
+        ha_list: selectedMode() === "internal_alexa" ? internalHaList.value : haList.value,
+        interval_seconds: Number(interval.value),
+        sync_completed: syncCompleted.checked,
+        remove_completed: removeCompleted.checked
+      };
+      const res = await fetch("api/config", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        setMessage(data.error || "Speichern fehlgeschlagen", "error");
+        return;
+      }
+      setMessage("Gespeichert.", "ok");
+      await loadConfig();
+    });
+
+    document.getElementById("sync-now").addEventListener("click", async () => {
+      setMessage("Synchronisiere...");
+      const res = await fetch("api/sync", {method: "POST"});
+      const data = await res.json();
+      renderStatus(data.result);
+      setMessage(data.ok ? "Sync abgeschlossen." : data.result.last_error, data.ok ? "ok" : "error");
+    });
+
+    document.getElementById("save-cookies").addEventListener("click", async () => {
+      const res = await fetch("api/alexa/cookies", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({account_id: cookieAccount.value, cookies: cookies.value})
+      });
+      const data = await res.json();
+      setMessage(data.ok ? "Cookies importiert." : data.error, data.ok ? "ok" : "error");
+    });
+
+    document.getElementById("import-amp-selected").addEventListener("click", async () => {
+      const sources = selectedAlexaMediaSessions();
+      if (!sources.length) {
+        setMessage("Bitte mindestens eine Alexa-Media-Player-Session auswaehlen.", "error");
+        return;
+      }
+      setMessage("Uebernehme ausgewaehlte Sessions aus Alexa Media Player...");
+      const res = await fetch("api/alexa/import_amp_selected", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({sources})
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        setMessage(data.error || "Uebernahme fehlgeschlagen", "error");
+        return;
+      }
+      setMessage(`${data.result.imported.length} ausgewaehlte Session(s) uebernommen.`, "ok");
+      await loadConfig();
+    });
+
+    document.getElementById("add-account").addEventListener("click", () => {
+      const accounts = collectAccounts();
+      accounts.push({
+        id: newAccountId(),
+        name: `Amazon Konto ${accounts.length + 1}`,
+        amazon_domain: amazonDomain.value || "amazon.de",
+        enabled: false
+      });
+      renderAccounts(accounts);
+    });
+
+    accountList.addEventListener("click", async (event) => {
+      const button = event.target.closest("button[data-action]");
+      if (!button) return;
+      const card = button.closest(".account-card");
+      const account = accountFromCard(card);
+
+      if (button.dataset.action === "remove") {
+        card.remove();
+        renderCookieAccountSelect(collectAccounts());
+        return;
+      }
+
+      if (button.dataset.action === "import") {
+        const source = card.querySelector(".account-session").value;
+        if (!source) {
+          setMessage("Bitte fuer dieses Konto eine Alexa-Media-Player-Session auswaehlen.", "error");
+          return;
+        }
+        setMessage(`Uebernehme Session fuer ${account.name}...`);
+        const res = await fetch("api/alexa/import_amp", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({account, source})
+        });
+        const data = await res.json();
+        if (!data.ok) {
+          setMessage(data.error || "Uebernahme fehlgeschlagen", "error");
+          return;
+        }
+        setMessage(`Session fuer ${account.name} uebernommen (${data.result.cookie_count} Cookies).`, "ok");
+        await loadConfig();
+        return;
+      }
+
+      if (button.dataset.action === "login") {
+        setMessage(`Oeffne Amazon-Anmeldung fuer ${account.name}...`);
+        const data = await setupAction("api/setup/start", {account});
+        if (data) setMessage(`Amazon-Anmeldung fuer ${account.name} geoeffnet.`, "ok");
+        return;
+      }
+
+      if (button.dataset.action === "check") {
+        setMessage(`Pruefe Amazon-Session fuer ${account.name}...`);
+        const res = await fetch("api/alexa/status", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({account})
+        });
+        const data = await res.json();
+        setMessage(data.message, data.authenticated ? "ok" : "error");
+      }
+    });
+
+    function renderSetupScreenshot(payload) {
+      setupSize = {width: payload.width || 1366, height: payload.height || 768};
+      setupScreenshot.src = `data:image/png;base64,${payload.image}`;
+      setupBrowser.style.display = "block";
+    }
+
+    async function setupAction(path, body = {}) {
+      const res = await fetch(path, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        setMessage(data.error || "Aktion fehlgeschlagen", "error");
+        return null;
+      }
+      if (data.screenshot) renderSetupScreenshot(data.screenshot);
+      return data;
+    }
+
+    document.getElementById("setup-save").addEventListener("click", async () => {
+      const data = await setupAction("api/setup/save");
+      if (data) {
+        setMessage(`Session gespeichert (${data.result.cookie_count} Cookies).`, "ok");
+        await loadConfig();
+      }
+    });
+
+    document.getElementById("setup-stop").addEventListener("click", async () => {
+      const data = await setupAction("api/setup/stop");
+      if (data) {
+        setupBrowser.style.display = "none";
+        setMessage("Browser geschlossen.", "ok");
+      }
+    });
+
+    setupScreenshot.addEventListener("click", async (event) => {
+      setupFocused = true;
+      const rect = setupScreenshot.getBoundingClientRect();
+      const x = Math.round((event.clientX - rect.left) * setupSize.width / rect.width);
+      const y = Math.round((event.clientY - rect.top) * setupSize.height / rect.height);
+      await setupAction("api/setup/click", {x, y});
+    });
+
+    document.addEventListener("keydown", async (event) => {
+      if (!setupFocused || setupBrowser.style.display === "none") return;
+      const tag = document.activeElement?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (event.key.length === 1) {
+        event.preventDefault();
+        await setupAction("api/setup/type", {text: event.key});
+        return;
+      }
+      if (["Enter", "Tab", "Backspace", "Escape"].includes(event.key)) {
+        event.preventDefault();
+        await setupAction("api/setup/key", {key: event.key});
+      }
+    });
+
+    document.addEventListener("paste", async (event) => {
+      if (!setupFocused || setupBrowser.style.display === "none") return;
+      const text = event.clipboardData?.getData("text") || "";
+      if (!text) return;
+      event.preventDefault();
+      await setupAction("api/setup/type", {text});
+    });
+
+    modeInputs.forEach((input) => input.addEventListener("change", applyModeVisibility));
+
+    loadConfig().catch((err) => setMessage(err.message, "error"));
+  </script>
+</body>
+</html>
