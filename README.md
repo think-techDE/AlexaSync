@@ -84,6 +84,14 @@ log_level: info
 
 ---
 
+## Unterstützung
+
+Alexa Sync ist ein privates Open-Source-Projekt. Wenn es dir Zeit spart, freue ich mich über einen Kaffee ☕
+
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-thinktech-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/thinktech)
+
+---
+
 ## Dokumentation
 
 - Ausführliche Dokumentation: [`alexa_sync/DOCS.md`](alexa_sync/DOCS.md)
