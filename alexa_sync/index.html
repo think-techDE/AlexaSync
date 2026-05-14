@@ -349,6 +349,15 @@
       border-color: var(--accent);
     }
 
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+    }
+
+    button:disabled:hover {
+      border-color: var(--border-strong);
+    }
+
     button.primary {
       background: var(--accent);
       border-color: var(--accent);
@@ -541,11 +550,11 @@
         <section class="section">
           <div class="section-head">
             <h2>2. Alexa-Sessions</h2>
-            <p>Der einfachste Weg ist der Import vorhandener Alexa-Media-Player-Sessions.</p>
+            <p>Vorhandene Alexa-Media-Player-Sessions werden als Amazon-Zugang genutzt.</p>
           </div>
           <div class="session-toolbar">
             <div id="amp-status" class="hint"></div>
-            <button id="import-amp-selected" type="button">Ausgewaehlte uebernehmen</button>
+            <button id="import-amp-selected" type="button">Gefundene uebernehmen</button>
           </div>
           <div id="amp-session-list" class="session-list"></div>
         </section>
@@ -554,7 +563,7 @@
           <div class="account-toolbar">
             <div class="section-head">
               <h2>3. Amazon-Konten</h2>
-              <p>Nur aktive Konten mit gespeicherter Session werden synchronisiert.</p>
+              <p>Wird beim Uebernehmen der Alexa-Media-Player-Sessions automatisch gefuellt.</p>
             </div>
             <button id="add-account" type="button">Konto hinzufuegen</button>
           </div>
@@ -641,6 +650,7 @@
     const cookieAccount = document.getElementById("cookie-account");
     const ampSessionList = document.getElementById("amp-session-list");
     const ampStatus = document.getElementById("amp-status");
+    const importAmpSelected = document.getElementById("import-amp-selected");
     const setupBrowser = document.getElementById("setup-browser");
     const setupScreenshot = document.getElementById("setup-screenshot");
 
@@ -716,6 +726,7 @@
       ampSessionList.replaceChildren();
       const importable = alexaMediaSessions.filter((session) => session.importable);
       const missing = alexaMediaSessions.filter((session) => !session.importable);
+      importAmpSelected.disabled = !importable.length;
 
       if (!importable.length) {
         const empty = document.createElement("div");
@@ -728,7 +739,7 @@
         const label = document.createElement("label");
         label.className = "session-row";
         label.innerHTML = `
-          <input type="checkbox" value="${escapeHtml(session.name)}">
+          <input type="checkbox" value="${escapeHtml(session.name)}" checked>
           <span class="session-main">
             <span class="title-line"><strong>${escapeHtml(session.label || session.name)}</strong>${sessionBadge(session)}</span>
             <span class="status-text">${escapeHtml(session.active ? "Aktive Alexa-Media-Player-Session" : "Gefundene Cookie-Datei")}</span>
@@ -739,7 +750,7 @@
       }
 
       ampStatus.textContent = importable.length
-        ? `${importable.length} Session(s) koennen importiert werden${missing.length ? `, ${missing.length} Konto/Konten ohne Cookie-Datei` : ""}.`
+        ? `${importable.length} Session(s) gefunden${missing.length ? `, ${missing.length} Konto/Konten ohne Cookie-Datei` : ""}.`
         : (missing.length ? `${missing.length} Alexa-Media-Player-Konto/Konten ohne Cookie-Datei gefunden.` : "Keine Session gefunden.");
     }
 
@@ -827,9 +838,8 @@
       if (data.entity_error) setMessage(data.entity_error, "error");
     }
 
-    async function saveConfig(event) {
-      event.preventDefault();
-      const payload = {
+    function draftSettings() {
+      return {
         mode: "internal_alexa",
         amazon_domain: amazonDomain.value,
         amazon_accounts: collectAccounts(),
@@ -838,10 +848,14 @@
         sync_completed: syncCompleted.checked,
         remove_completed: removeCompleted.checked
       };
+    }
+
+    async function saveConfig(event) {
+      event.preventDefault();
       const res = await fetch("api/config", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
-        body: JSON.stringify(payload)
+        body: JSON.stringify(draftSettings())
       });
       const data = await res.json();
       if (!data.ok) {
@@ -865,7 +879,7 @@
       const res = await fetch("api/alexa/cookies", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({account_id: cookieAccount.value, account, cookies: cookies.value})
+        body: JSON.stringify({account_id: cookieAccount.value, account, cookies: cookies.value, settings: draftSettings()})
       });
       const data = await res.json();
       setMessage(data.ok ? "Cookies importiert." : data.error, data.ok ? "ok" : "error");
@@ -878,11 +892,11 @@
         setMessage("Bitte mindestens eine Session auswaehlen.", "error");
         return;
       }
-      setMessage("Uebernehme Sessions...");
+      setMessage("Uebernehme Alexa-Media-Player-Sessions...");
       const res = await fetch("api/alexa/import_amp_selected", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({sources})
+        body: JSON.stringify({sources, settings: draftSettings()})
       });
       const data = await res.json();
       if (!data.ok) {
@@ -952,7 +966,7 @@
         const res = await fetch("api/alexa/import_amp", {
           method: "POST",
           headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({account, source})
+          body: JSON.stringify({account, source, settings: draftSettings()})
         });
         const data = await res.json();
         if (!data.ok) {
@@ -966,7 +980,7 @@
 
       if (button.dataset.action === "login") {
         setMessage(`Oeffne Amazon-Login fuer ${account.name}...`);
-        const data = await setupAction("api/setup/start", {account});
+        const data = await setupAction("api/setup/start", {account, settings: draftSettings()});
         if (data) setMessage(`Amazon-Login fuer ${account.name} geoeffnet.`, "ok");
         return;
       }
@@ -976,7 +990,7 @@
         const res = await fetch("api/alexa/status", {
           method: "POST",
           headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({account})
+          body: JSON.stringify({account, settings: draftSettings()})
         });
         const data = await res.json();
         setMessage(data.message, data.authenticated ? "ok" : "error");
@@ -984,7 +998,7 @@
     });
 
     document.getElementById("setup-save").addEventListener("click", async () => {
-      const data = await setupAction("api/setup/save");
+      const data = await setupAction("api/setup/save", {settings: draftSettings()});
       if (data) {
         setMessage(`Login-Session gespeichert (${data.result.cookie_count} Cookies).`, "ok");
         await loadConfig();

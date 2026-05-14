@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.4
+
+- Alexa-Media-Player-Sessionimport erkennt jetzt auch einfache AlexaPy-Cookie-Mappings neben verschachtelten CookieJar-Pickles.
+- Session-Uebernahme speichert die aktuell in der Weboberflaeche gewaehlte Ziel-Liste und Sync-Optionen direkt mit.
+- Alexa-Media-Player-Sessions sind in der Weboberflaeche vorausgewaehlt; der Hauptpfad ist damit Liste waehlen, gefundene Sessions uebernehmen, synchronisieren.
+
 ## 0.9.3
 
 - Weboberflaeche grundlegend neu aufgebaut und auf die benoetigten Kernfunktionen reduziert.

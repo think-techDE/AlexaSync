@@ -309,9 +309,40 @@ def is_cookie_dict(value: Any) -> bool:
     return isinstance(value, dict) and "name" in value and "value" in value
 
 
+def is_cookie_object(value: Any) -> bool:
+    """Return whether a value looks like an http.cookiejar.Cookie."""
+    return all(hasattr(value, attr) for attr in ("name", "value", "domain", "path"))
+
+
 def is_morsel(value: Any) -> bool:
     """Return whether a value looks like http.cookies.Morsel."""
     return hasattr(value, "key") and hasattr(value, "value") and hasattr(value, "__getitem__")
+
+
+def is_scalar_cookie_value(value: Any) -> bool:
+    """Return whether a value can be stored as one cookie value."""
+    return isinstance(value, (str, int, float, bool))
+
+
+def is_plain_cookie_mapping(value: dict[Any, Any]) -> bool:
+    """Return whether a dict is a simple cookie-name to cookie-value mapping."""
+    if not value:
+        return False
+    metadata_keys = {
+        "domain",
+        "expires",
+        "expiry",
+        "httponly",
+        "max-age",
+        "maxage",
+        "path",
+        "samesite",
+        "secure",
+    }
+    keys = {str(key).lower() for key in value}
+    if keys and keys <= metadata_keys:
+        return False
+    return all(isinstance(key, str) and is_scalar_cookie_value(child) for key, child in value.items())
 
 
 def safe_morsel_get(value: Any, key: str) -> str:
@@ -321,6 +352,16 @@ def safe_morsel_get(value: Any, key: str) -> str:
     except Exception:
         return ""
     return str(result or "")
+
+
+def cookie_flag(value: Any) -> bool:
+    """Normalize cookie boolean flags from bools and cookie attributes."""
+    if isinstance(value, bool):
+        return value
+    text = str(value or "").strip().lower()
+    if text in {"", "0", "false", "none", "no"}:
+        return False
+    return True
 
 
 def cookie_hints_from_key(key: Any, domain_hint: Any, path_hint: Any) -> tuple[Any, Any]:
@@ -344,8 +385,14 @@ def normalize_cookie_domain(domain_hint: Any, amazon_domain: str) -> str:
     return domain
 
 
-def parse_cookie_expiry(value: Any) -> int | None:
+def parse_cookie_expiry(value: Any, max_age: Any = None) -> int | None:
     """Parse cookie expiry values accepted by Selenium."""
+    if max_age not in (None, ""):
+        try:
+            return int(time.time()) + int(max_age)
+        except (TypeError, ValueError):
+            pass
+
     if value is None or value == "":
         return None
     if isinstance(value, (int, float)):
@@ -385,6 +432,7 @@ def extract_alexa_media_cookies(raw_cookie_data: Any, amazon_domain: str) -> lis
         secure: Any = False,
         http_only: Any = False,
         expires: Any = None,
+        max_age: Any = None,
         same_site: Any = "",
     ) -> None:
         cookie_name = str(name or "").strip()
@@ -395,7 +443,7 @@ def extract_alexa_media_cookies(raw_cookie_data: Any, amazon_domain: str) -> lis
         if not domain:
             return
         path = str(path_hint or "/")
-        expiry = parse_cookie_expiry(expires)
+        expiry = parse_cookie_expiry(expires, max_age)
         if expiry is not None and expiry <= int(time.time()):
             return
 
@@ -404,8 +452,8 @@ def extract_alexa_media_cookies(raw_cookie_data: Any, amazon_domain: str) -> lis
             "value": str(value),
             "domain": domain,
             "path": path,
-            "secure": bool(secure),
-            "httpOnly": bool(http_only),
+            "secure": cookie_flag(secure),
+            "httpOnly": cookie_flag(http_only),
         }
         if expiry is not None:
             cookie["expiry"] = expiry
@@ -429,7 +477,24 @@ def extract_alexa_media_cookies(raw_cookie_data: Any, amazon_domain: str) -> lis
                 value.get("secure", False),
                 value.get("httpOnly", value.get("httponly", False)),
                 value.get("expiry", value.get("expires")),
+                value.get("maxAge", value.get("max-age")),
                 value.get("sameSite", value.get("samesite", "")),
+            )
+            return
+
+        if is_cookie_object(value):
+            rest = getattr(value, "_rest", {}) or {}
+            http_only = "HttpOnly" in rest or "httponly" in rest
+            add_cookie(
+                getattr(value, "name", ""),
+                getattr(value, "value", ""),
+                getattr(value, "domain", "") or domain_hint,
+                getattr(value, "path", "") or path_hint,
+                getattr(value, "secure", False),
+                http_only,
+                getattr(value, "expires", None),
+                None,
+                rest.get("SameSite", rest.get("samesite", "")),
             )
             return
 
@@ -441,12 +506,18 @@ def extract_alexa_media_cookies(raw_cookie_data: Any, amazon_domain: str) -> lis
                 safe_morsel_get(value, "path") or path_hint,
                 safe_morsel_get(value, "secure"),
                 safe_morsel_get(value, "httponly"),
-                safe_morsel_get(value, "expires") or safe_morsel_get(value, "max-age"),
+                safe_morsel_get(value, "expires"),
+                safe_morsel_get(value, "max-age"),
                 safe_morsel_get(value, "samesite"),
             )
             return
 
         if isinstance(value, dict):
+            if is_plain_cookie_mapping(value):
+                for key, child in value.items():
+                    add_cookie(key, child, domain_hint, path_hint)
+                return
+
             for key, child in value.items():
                 next_domain, next_path = cookie_hints_from_key(key, domain_hint, path_hint)
                 collect(child, next_domain, next_path)
@@ -506,17 +577,25 @@ def import_alexa_media_session(
     raise RuntimeError(f"Keine nutzbare Alexa-Media-Player-Session gefunden.{details}")
 
 
-def import_selected_alexa_media_sessions(settings: dict[str, Any], source_names: list[str]) -> dict[str, Any]:
+def import_selected_alexa_media_sessions(settings: dict[str, Any], source_names: list[str] | None) -> dict[str, Any]:
     """Import selected Alexa Media Player sessions and create account entries."""
     from settings import SETTINGS_PATH, normalize_settings, write_json_file
 
-    selected_names = {str(name) for name in source_names if str(name).strip()}
-    if not selected_names:
-        raise RuntimeError("Bitte mindestens eine Alexa-Media-Player-Session auswaehlen.")
+    selected_names = {str(name) for name in source_names or [] if str(name).strip()}
+    session_files = find_alexa_media_session_files()
+    if selected_names:
+        session_files = [path for path in session_files if path.name in selected_names]
+    else:
+        active_identities = active_alexa_media_identities()
+        active_sessions = [
+            path
+            for path in session_files
+            if session_matches_active_identity(path, active_identities)
+        ]
+        session_files = active_sessions or session_files
 
-    session_files = [path for path in find_alexa_media_session_files() if path.name in selected_names]
     if not session_files:
-        raise RuntimeError("Keine der ausgewaehlten Alexa-Media-Player-Sessions wurde gefunden.")
+        raise RuntimeError("Keine importierbare Alexa-Media-Player-Session gefunden.")
 
     existing_accounts = list(settings.get("amazon_accounts") or [])
     if (

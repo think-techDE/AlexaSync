@@ -13,8 +13,9 @@
 6. Die **Weboberflaeche** oeffnen.
 7. Amazon-Domain und Bring-/Ziel-Liste auswaehlen.
 8. Wenn Alexa Media Player bereits eingerichtet ist:
-   gewuenschte Sessions markieren und **Ausgewaehlte aus Alexa Media Player
-   uebernehmen** klicken.
+   **Gefundene uebernehmen** klicken. Die gefundenen Sessions sind
+   vorausgewaehlt; das Add-on legt daraus die Amazon-Konten an und speichert die
+   aktuelle Ziel-Liste direkt mit.
 9. Weitere Amazon-Konten bei Bedarf mit **Amazon-Konto hinzufuegen** anlegen.
 10. Sonst pro Konto **Amazon-Anmeldung oeffnen**, im eingeblendeten Amazon-
     Browser anmelden und danach **Session uebernehmen**.
@@ -28,8 +29,9 @@ gespeichert.
 
 Wenn Alexa Media Player bereits laeuft, kann das Add-on dessen Session aus
 `/homeassistant/.storage/alexa_media*.pickle` uebernehmen. Wenn mehrere Dateien
-vorhanden sind, legt das Add-on nur fuer die in der Weboberflaeche markierten
-Sessions Amazon-Konten an. Die Home-Assistant-Konfiguration wird dafuer nur
+vorhanden sind, legt das Add-on fuer die vorausgewaehlten Sessions Amazon-
+Konten an. Dabei werden verschachtelte CookieJar-Pickles und einfache AlexaPy-
+Cookie-Mappings akzeptiert. Die Home-Assistant-Konfiguration wird dafuer nur
 read-only eingebunden. Importierbare Cookie-Dateien werden angezeigt und als
 aktiv oder ungeprueft markiert; doppelte Cookie-Dateien derselben Mailadresse
 werden zusammengefasst. Aktive Alexa-Media-Player-Config-Entries ohne Cookie-

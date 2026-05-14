@@ -16,8 +16,9 @@ oder ueber den Sidebar-Eintrag **Alexa Sync**. Es muss nur die
 Bring-/Ziel-Liste gewaehlt und mindestens eine Amazon-Session gespeichert werden. Wenn
 Alexa Media Player bereits in Home Assistant eingerichtet ist, kann dessen
 Session per Knopfdruck uebernommen werden. Sind mehrere Alexa-Media-Player-
-Sessions vorhanden, legt das Add-on nur fuer markierte Sessions Amazon-Konten
-an.
+Sessions vorhanden, sind sie vorausgewaehlt; beim Uebernehmen legt das Add-on
+die Amazon-Konten automatisch an und speichert die aktuelle Ziel-Listen-
+Konfiguration mit.
 
 Die YAML-Optionen bleiben als Start-/Fallbackwerte erhalten.
 
@@ -34,11 +35,12 @@ Die YAML-Optionen bleiben als Start-/Fallbackwerte erhalten.
 ## Amazon-Session
 
 Amazon stellt keine offizielle stabile API fuer Alexa-Einkaufslisten bereit. Das
-Add-on speichert deshalb keine Amazon-Zugangsdaten. Der einfachste Weg ist
-gewuenschte Alexa-Media-Player-Sessions zu markieren und **Ausgewaehlte aus
-Alexa Media Player uebernehmen** zu klicken. Dafuer liest das Add-on nur die
-ausgewaehlten Alexa-Media-Player-Cookie-Dateien aus der Home-Assistant-
-Konfiguration und legt je Datei ein Amazon-Konto an. Der Zugriff auf die
+Add-on speichert deshalb keine Amazon-Zugangsdaten. Der einfachste Weg ist,
+die gefundenen Alexa-Media-Player-Sessions mit **Gefundene uebernehmen** zu
+importieren. Dafuer liest das Add-on nur die gewaehlten
+Alexa-Media-Player-Cookie-Dateien aus der Home-Assistant-Konfiguration und legt
+je Datei ein Amazon-Konto an. Es akzeptiert dabei verschachtelte CookieJar-
+Pickles und einfache AlexaPy-Cookie-Mappings. Der Zugriff auf die
 Home-Assistant-Konfiguration ist read-only. Alte Cookie-Dateien werden
 als ungeprueft markiert, wenn sie keinem aktiven Alexa-Media-Player-Config-Entry
 mehr zugeordnet werden koennen; doppelte Dateien derselben Mailadresse erscheinen

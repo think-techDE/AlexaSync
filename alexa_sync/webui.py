@@ -10,7 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from settings import WEB_PORT, load_settings, persist_amazon_account, save_settings
+from settings import WEB_PORT, load_settings, normalize_settings, persist_amazon_account, save_settings
 from alexa_client import (
     InternalAlexaClient,
     account_cookie_path,
@@ -58,6 +58,17 @@ def resolve_account_from_payload(settings: dict[str, Any], payload: dict[str, An
         if account["id"] == account_id:
             return account
     raise ValueError("Amazon-Konto nicht gefunden. Bitte speichern und erneut versuchen.")
+
+
+def load_settings_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Load settings, applying optional unsaved UI values without validating sessions yet."""
+    settings = load_settings()
+    draft_settings = payload.get("settings")
+    if isinstance(draft_settings, dict):
+        merged_settings = dict(settings)
+        merged_settings.update(draft_settings)
+        settings = normalize_settings(merged_settings)
+    return settings
 
 
 def amazon_account_statuses(settings: dict[str, Any]) -> list[dict[str, Any]]:
@@ -156,7 +167,7 @@ class WebHandler(BaseHTTPRequestHandler):
         if self.path == "/api/alexa/cookies":
             try:
                 payload = self.read_json()
-                settings = load_settings()
+                settings = load_settings_from_payload(payload)
                 account = resolve_account_from_payload(settings, payload)
                 cookies = payload.get("cookies")
                 if isinstance(cookies, str):
@@ -172,7 +183,7 @@ class WebHandler(BaseHTTPRequestHandler):
         if self.path == "/api/alexa/status":
             try:
                 payload = self.read_json()
-                settings = load_settings()
+                settings = load_settings_from_payload(payload)
                 account = resolve_account_from_payload(settings, payload)
                 self.send_json(self.get_alexa_status_payload(account))
             except Exception as exc:
@@ -181,7 +192,7 @@ class WebHandler(BaseHTTPRequestHandler):
         if self.path == "/api/alexa/import_amp":
             try:
                 payload = self.read_json()
-                settings = load_settings()
+                settings = load_settings_from_payload(payload)
                 account = resolve_account_from_payload(settings, payload)
                 result = import_alexa_media_session(
                     account["amazon_domain"],
@@ -197,18 +208,18 @@ class WebHandler(BaseHTTPRequestHandler):
             try:
                 payload = self.read_json()
                 sources = payload.get("sources")
-                if not isinstance(sources, list):
-                    raise ValueError("Bitte Alexa-Media-Player-Sessions auswaehlen.")
-                settings = load_settings()
+                if sources is not None and not isinstance(sources, list):
+                    raise ValueError("Alexa-Media-Player-Sessions muessen als Liste uebergeben werden.")
+                settings = load_settings_from_payload(payload)
                 result = import_selected_alexa_media_sessions(settings, sources)
-                self.send_json({"ok": True, "result": result})
+                self.send_json({"ok": True, "result": result, "settings": result.get("settings")})
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
         if self.path == "/api/setup/start":
             try:
                 payload = self.read_json()
-                settings = load_settings()
+                settings = load_settings_from_payload(payload)
                 account = resolve_account_from_payload(settings, payload)
                 screenshot = self.runtime.start_setup_browser(account)
                 self.send_json({"ok": True, "screenshot": screenshot})
@@ -242,8 +253,9 @@ class WebHandler(BaseHTTPRequestHandler):
             return
         if self.path == "/api/setup/save":
             try:
+                payload = self.read_json()
                 result = self.runtime.save_setup_cookies()
-                settings = load_settings()
+                settings = load_settings_from_payload(payload)
                 if isinstance(result.get("account"), dict):
                     settings = persist_amazon_account(settings, result["account"])
                 self.send_json({"ok": True, "result": result, "settings": settings})
