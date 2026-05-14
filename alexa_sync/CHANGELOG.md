@@ -7,6 +7,7 @@
 - Session-Uebernahmen aus Alexa Media Player, Login-Browser und Cookie-Import speichern das betroffene Amazon-Konto dauerhaft.
 - Dokumentation und Add-on-Optionen an die vereinfachte Konfiguration angepasst.
 - Umlaut-Normalisierung fuer den Listenabgleich robuster gemacht.
+- Nicht mehr genutzte WebSocket-Abhaengigkeit entfernt.
 
 ## 0.8.4
 
