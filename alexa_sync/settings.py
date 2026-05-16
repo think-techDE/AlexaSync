@@ -25,7 +25,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "amazon_domain": "amazon.de",
     "amazon_accounts": [],
     "ha_list": "",
-    "interval_seconds": 120,
+    "interval_seconds": 150,
     "sync_completed": True,
     "remove_completed": False,
     "log_level": "info",
@@ -140,7 +140,7 @@ def normalize_settings(raw: dict[str, Any]) -> dict[str, Any]:
     if settings["amazon_accounts"]:
         settings["amazon_domain"] = settings["amazon_accounts"][0]["amazon_domain"]
     settings["ha_list"] = str(settings.get("ha_list", "")).strip()
-    settings["interval_seconds"] = parse_int(settings.get("interval_seconds"), 120, 30, 3600)
+    settings["interval_seconds"] = parse_int(settings.get("interval_seconds"), 150, 30, 3600)
     settings["sync_completed"] = bool(settings.get("sync_completed", True))
     settings["remove_completed"] = bool(settings.get("remove_completed", False))
     settings["log_level"] = str(settings.get("log_level", "info")).lower()

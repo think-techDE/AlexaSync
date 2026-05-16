@@ -81,7 +81,7 @@ The web UI is the preferred way. These options can be set as initial values:
 ```yaml
 amazon_domain: amazon.de
 ha_list: todo.shopping_list
-interval_seconds: 120
+interval_seconds: 150
 sync_completed: true
 remove_completed: false
 log_level: info

@@ -7,6 +7,7 @@ import logging
 import pickle
 import re
 import time
+import zlib
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any
@@ -24,8 +25,8 @@ from ha_client import TodoItem
 LOGGER = logging.getLogger("alexa_sync")
 
 HTTP_USER_AGENT = (
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+    "AppleWebKit PitanguiBridge/2.2.595606.0-"
+    "[HARDWARE=iPhone14_7][SOFTWARE=17.4.1][DEVICE=iPhone]"
 )
 SHOPPING_LIST_ITEM_STATUS_ACTIVE = "ACTIVE"
 SHOPPING_LIST_ITEM_STATUS_COMPLETE = "COMPLETE"
@@ -807,10 +808,12 @@ class HttpAlexaClient:
     def __enter__(self) -> "HttpAlexaClient":
         """Load session cookies."""
         self.cookies = load_cookie_list(self.cookie_path)
-        self.cookie_header = cookie_header_from_cookie_list(self.cookies, f"www.{self.amazon_domain}")
+        self.cookie_header = cookie_header_from_cookie_list(self.cookies)
         self.csrf = csrf_from_cookie_list(self.cookies)
         if not self.cookie_header:
             raise RuntimeError("Amazon-Session enthaelt keine nutzbaren Cookies.")
+        if not self.csrf:
+            raise RuntimeError("Amazon-Session enthaelt kein CSRF-Cookie.")
         return self
 
     def __exit__(self, _exc_type: Any, _exc: Any, _tb: Any) -> None:
@@ -836,6 +839,7 @@ class HttpAlexaClient:
             "Origin": self._alexa_api_base(),
             "Referer": f"{self._alexa_api_base()}/spa/index.html",
             "User-Agent": HTTP_USER_AGENT,
+            "Accept-Encoding": "gzip, deflate",
         }
         if self.csrf:
             headers["csrf"] = self.csrf
@@ -854,9 +858,9 @@ class HttpAlexaClient:
         http_request = request.Request(url, data=data, headers=self._headers(), method=method)
         try:
             with request.urlopen(http_request, timeout=20) as response:
-                body = response.read().decode("utf-8", errors="replace")
+                body = self._decode_response_body(response.read(), response.headers.get("Content-Encoding"))
         except error.HTTPError as exc:
-            body = exc.read().decode("utf-8", errors="replace")
+            body = self._decode_response_body(exc.read(), exc.headers.get("Content-Encoding"))
             raise RuntimeError(f"Alexa-HTTP-Anfrage fehlgeschlagen ({exc.code}): {body[:200]}") from exc
         except error.URLError as exc:
             raise RuntimeError(f"Alexa-HTTP-Anfrage fehlgeschlagen: {exc}") from exc
@@ -870,6 +874,18 @@ class HttpAlexaClient:
             raise RuntimeError("Alexa-HTTP-Antwort war kein JSON-Objekt.")
         return parsed
 
+    def _decode_response_body(self, body: bytes, encoding: str | None) -> str:
+        """Decode a possibly compressed Amazon response body for JSON parsing/logging."""
+        normalized = str(encoding or "").lower()
+        try:
+            if normalized == "gzip":
+                body = zlib.decompress(body, zlib.MAX_WBITS | 16)
+            elif normalized == "deflate":
+                body = zlib.decompress(body)
+        except zlib.error:
+            LOGGER.debug("Could not decompress Alexa HTTP response", exc_info=True)
+        return body.decode("utf-8", errors="replace")
+
     def _quote(self, value: str) -> str:
         """Quote a path value for Amazon internal endpoints."""
         return parse.quote(value, safe="")
@@ -879,7 +895,12 @@ class HttpAlexaClient:
         response = self._request_json(
             "POST",
             f"{self._shopping_api_base()}/lists/fetch",
-            {"listAttributesToAggregate": ["totalActiveItemsCount"]},
+            {
+                "listAttributesToAggregate": [
+                    {"type": "totalActiveItemsCount"},
+                ],
+                "listOwnershipType": None,
+            },
         )
         raw_lists = response.get("listInfoList") or response.get("lists") or []
         return raw_lists if isinstance(raw_lists, list) else []
@@ -938,6 +959,7 @@ class HttpAlexaClient:
     def _extract_items(self, response: dict[str, Any]) -> list[dict[str, Any]]:
         """Extract list items from known Alexa response shapes."""
         raw_items = response.get("listItemInfoList") or response.get("items") or []
+        raw_items = response.get("itemInfoList") or raw_items
         return raw_items if isinstance(raw_items, list) else []
 
     def get_items(self) -> list[TodoItem]:
@@ -949,13 +971,8 @@ class HttpAlexaClient:
             url,
             {
                 "itemAttributesToProject": [
-                    "itemId",
-                    "itemName",
-                    "itemStatus",
-                    "version",
-                    "customerId",
-                    "createdTime",
-                    "updatedTime",
+                    "quantity",
+                    "note",
                 ]
             },
         )
@@ -983,7 +1000,6 @@ class HttpAlexaClient:
             "items": [
                 {
                     "itemName": item.summary,
-                    "itemStatus": SHOPPING_LIST_ITEM_STATUS_ACTIVE,
                     "itemType": "KEYWORD",
                 }
             ]
@@ -1015,6 +1031,7 @@ class HttpAlexaClient:
             )
             payload = {
                 "itemAttributesToUpdate": [
+                    {"type": "itemName", "value": item.summary},
                     {"type": "itemStatus", "value": SHOPPING_LIST_ITEM_STATUS_COMPLETE}
                 ],
                 "itemAttributesToRemove": [],

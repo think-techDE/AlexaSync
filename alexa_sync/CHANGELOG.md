@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.13
+
+- Alexa-HTTP-Sync enger an `alexa-remote2` angepasst: offizieller Alexa-App-User-Agent, kompletter AMP-Cookie-Header und V2-Payloads mit `type`-Objekten.
+- HTTP-Antworten mit `gzip` oder `deflate` werden fuer Logs und JSON-Auswertung korrekt dekodiert.
+- Standard-Sync-Intervall von 120 auf 150 Sekunden erhoeht.
+
 ## 0.9.12
 
 - Alexa-HTTP-Sync auf die aktuellen internen Listen-V2-Endpunkte umgestellt (`/lists/fetch`, `/items/fetch`).

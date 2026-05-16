@@ -70,7 +70,7 @@ The web UI is the recommended way. All options can also be set via YAML:
 |---|---|---|
 | `amazon_domain` | `amazon.de` | Amazon domain of the account |
 | `ha_list` | _(empty)_ | Entity ID of the target `todo` list |
-| `interval_seconds` | `120` | Sync interval in seconds |
+| `interval_seconds` | `150` | Sync interval in seconds |
 | `sync_completed` | `true` | Import completed Alexa items into HA |
 | `remove_completed` | `false` | Remove completed HA items from Alexa |
 | `log_level` | `info` | Log level (`debug`, `info`, `warning`, `error`) |
@@ -78,7 +78,7 @@ The web UI is the recommended way. All options can also be set via YAML:
 ```yaml
 amazon_domain: amazon.de
 ha_list: todo.shopping_list
-interval_seconds: 120
+interval_seconds: 150
 sync_completed: true
 remove_completed: false
 log_level: info

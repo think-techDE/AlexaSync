@@ -160,6 +160,7 @@ class AlexaMediaCookieExtractionTests(unittest.TestCase):
 class FakeHTTPResponse:
     def __init__(self, payload: dict[str, object]) -> None:
         self.payload = payload
+        self.headers: dict[str, str] = {}
 
     def __enter__(self) -> "FakeHTTPResponse":
         return self
@@ -221,7 +222,7 @@ class HttpAlexaClientTests(unittest.TestCase):
             if method == "POST" and url.endswith("/lists/SHOPPING-LIST/items/fetch?limit=100"):
                 return FakeHTTPResponse(
                     {
-                        "listItemInfoList": [
+                        "itemInfoList": [
                             {
                                 "itemId": "item-1",
                                 "itemName": "Milch",
@@ -261,6 +262,10 @@ class HttpAlexaClientTests(unittest.TestCase):
         self.assertEqual([item.summary for item in items], ["Milch"])
         self.assertEqual(removed, 1)
         self.assertEqual([method for method, _url, _data in requests_seen], ["POST", "POST", "POST", "PUT"])
+        list_fetch_payload = json.loads((requests_seen[0][2] or b"{}").decode("utf-8"))
+        self.assertEqual(list_fetch_payload["listAttributesToAggregate"][0]["type"], "totalActiveItemsCount")
+        item_fetch_payload = json.loads((requests_seen[1][2] or b"{}").decode("utf-8"))
+        self.assertEqual(item_fetch_payload["itemAttributesToProject"], ["quantity", "note"])
         self.assertIn("version=7", requests_seen[-1][1])
         self.assertIn(b'"itemStatus"', requests_seen[-1][2] or b"")
 
