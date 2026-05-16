@@ -928,6 +928,15 @@ class HttpAlexaClient:
             score -= 10
         return score
 
+    def _list_candidate_summary(self, candidate: dict[str, Any]) -> str:
+        """Return a compact log-safe list metadata summary."""
+        fields = []
+        for key in ("listType", "type", "listName", "name", "listId", "id"):
+            value = str(candidate.get(key) or "").strip()
+            if value:
+                fields.append(f"{key}={value[:60]}")
+        return ", ".join(fields) or "unknown"
+
     def _ensure_shopping_list_id(self) -> str:
         """Return and cache the Alexa shopping list id."""
         if self.shopping_list_id:
@@ -941,7 +950,8 @@ class HttpAlexaClient:
             raise RuntimeError("Alexa-HTTP konnte keine Listenmetadaten lesen.")
         best = max(candidates, key=self._shopping_score)
         if self._shopping_score(best) <= 0:
-            raise RuntimeError("Alexa-HTTP konnte die Einkaufsliste nicht eindeutig finden.")
+            summaries = "; ".join(self._list_candidate_summary(candidate) for candidate in candidates[:5])
+            raise RuntimeError(f"Alexa-HTTP konnte die Einkaufsliste nicht eindeutig finden. Listen: {summaries}")
         self.shopping_list_id = self._list_id_from_candidate(best)
         return self.shopping_list_id
 

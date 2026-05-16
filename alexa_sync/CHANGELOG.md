@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.14
+
+- Schutz gegen fehlerhafte Massen-Abschluesse: Wenn viele Alexa-Eintraege auf einmal zu fehlen scheinen, werden Home-Assistant-Eintraege nicht automatisch erledigt.
+- Einzelne verschwundene Alexa-Eintraege muessen in zwei Sync-Laeufen bestaetigt werden, bevor sie in Home Assistant als erledigt markiert werden.
+- HTTP-Listenfehler nennen nun erkannte Listentypen und Namen, damit die Alexa-Einkaufsliste besser diagnostiziert werden kann.
+
 ## 0.9.13
 
 - Alexa-HTTP-Sync enger an `alexa-remote2` angepasst: offizieller Alexa-App-User-Agent, kompletter AMP-Cookie-Header und V2-Payloads mit `type`-Objekten.

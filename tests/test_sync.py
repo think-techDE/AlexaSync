@@ -47,6 +47,15 @@ class FakeHomeAssistant:
         raise AssertionError(f"Unexpected HA status update: {item_uid} -> {status}")
 
 
+class UpdatingHomeAssistant(FakeHomeAssistant):
+    def __init__(self, items: list[TodoItem]) -> None:
+        super().__init__(items)
+        self.status_updates: list[tuple[str, str]] = []
+
+    def update_status(self, _entity_id: str, item_uid: str, status: str) -> None:
+        self.status_updates.append((item_uid, status))
+
+
 class SyncCompletedRemovalTests(unittest.TestCase):
     def test_completed_alexa_items_are_removed_in_one_batch(self) -> None:
         alexa = FakeAlexa(
@@ -76,6 +85,79 @@ class SyncCompletedRemovalTests(unittest.TestCase):
         self.assertEqual(writes, 2)
         self.assertEqual(alexa.removed_batches, [["A", "B"]])
         self.assertEqual(alexa.remove_item_calls, [])
+
+
+class SyncAlexaDisappearanceTests(unittest.TestCase):
+    def test_missing_alexa_item_must_be_confirmed_before_completion(self) -> None:
+        alexa = FakeAlexa([])
+        ha = UpdatingHomeAssistant([TodoItem(uid="ha-a", summary="A", status=STATUS_NEEDS_ACTION)])
+        settings = {"sync_completed": True, "remove_completed": False}
+        state = {
+            "items": {
+                "a": {
+                    "a_uid": "a",
+                    "a_status": STATUS_NEEDS_ACTION,
+                    "b_uid": "ha-a",
+                    "b_status": STATUS_NEEDS_ACTION,
+                }
+            }
+        }
+
+        first_writes = sync_alexa_items_with_ha(
+            alexa,
+            ha,
+            "todo.einkauf",
+            settings,
+            state,
+            alexa_label="Alexa",
+            save_after=False,
+        )
+        second_writes = sync_alexa_items_with_ha(
+            alexa,
+            ha,
+            "todo.einkauf",
+            settings,
+            state,
+            alexa_label="Alexa",
+            save_after=False,
+        )
+
+        self.assertEqual(first_writes, 0)
+        self.assertEqual(second_writes, 1)
+        self.assertEqual(ha.status_updates, [("ha-a", STATUS_COMPLETED)])
+
+    def test_bulk_disappearances_are_not_completed(self) -> None:
+        items = [
+            TodoItem(uid=f"ha-{index}", summary=f"Item {index}", status=STATUS_NEEDS_ACTION)
+            for index in range(6)
+        ]
+        alexa = FakeAlexa([])
+        ha = UpdatingHomeAssistant(items)
+        settings = {"sync_completed": True, "remove_completed": False}
+        state = {
+            "items": {
+                f"item {index}": {
+                    "a_uid": f"alexa-{index}",
+                    "a_status": STATUS_NEEDS_ACTION,
+                    "b_uid": f"ha-{index}",
+                    "b_status": STATUS_NEEDS_ACTION,
+                }
+                for index in range(6)
+            }
+        }
+
+        writes = sync_alexa_items_with_ha(
+            alexa,
+            ha,
+            "todo.einkauf",
+            settings,
+            state,
+            alexa_label="Alexa",
+            save_after=False,
+        )
+
+        self.assertEqual(writes, 0)
+        self.assertEqual(ha.status_updates, [])
 
 
 class ContextAlexa(FakeAlexa):

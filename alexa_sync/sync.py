@@ -17,6 +17,8 @@ from alexa_client import (
 )
 
 LOGGER = logging.getLogger("alexa_sync")
+MISSING_COMPLETION_CONFIRMATIONS = 2
+MISSING_COMPLETION_BULK_LIMIT = 5
 
 
 def resolve_status(item_a: TodoItem, item_b: TodoItem, state: dict[str, Any]) -> str | None:
@@ -45,6 +47,7 @@ def remember(state: dict[str, Any], item_a: TodoItem | None, item_b: TodoItem | 
         state["a_uid"] = item_a.uid
         state["a_status"] = item_a.status
         state["summary"] = item_a.summary
+        state.pop("a_missing_count", None)
     if item_b is not None:
         state["b_uid"] = item_b.uid
         state["b_status"] = item_b.status
@@ -178,6 +181,7 @@ def sync_alexa_items_with_ha(
     stored_items = state.setdefault("items", {})
     keys = set(alexa_items) | set(ha_items) | set(stored_items)
     completed_alexa_items: list[TodoItem] = []
+    missing_completion_candidates: list[tuple[dict[str, Any], TodoItem]] = []
     writes = 0
 
     for key in sorted(keys):
@@ -196,15 +200,7 @@ def sync_alexa_items_with_ha(
                 and item_state.get("b_status") == STATUS_NEEDS_ACTION
                 and ha_item.status == STATUS_NEEDS_ACTION
             ):
-                LOGGER.info(
-                    "Marking '%s' in %s as completed because it disappeared from %s",
-                    ha_item.summary,
-                    ha_entity,
-                    alexa_label,
-                )
-                client.update_status(ha_entity, ha_item.uid, STATUS_COMPLETED)
-                ha_item.status = STATUS_COMPLETED
-                writes += 1
+                missing_completion_candidates.append((item_state, ha_item))
                 remember(item_state, alexa_item, ha_item)
                 continue
             if ha_item.status == STATUS_NEEDS_ACTION:
@@ -231,6 +227,37 @@ def sync_alexa_items_with_ha(
             completed_alexa_items.append(alexa_item)
 
         remember(item_state, alexa_item, ha_item)
+
+    if len(missing_completion_candidates) > MISSING_COMPLETION_BULK_LIMIT:
+        LOGGER.warning(
+            "Skipping %s Alexa disappearance completions for %s because the list read looks incomplete",
+            len(missing_completion_candidates),
+            alexa_label,
+        )
+        for item_state, _ha_item in missing_completion_candidates:
+            item_state["a_missing_count"] = 0
+    else:
+        for item_state, ha_item in missing_completion_candidates:
+            missing_count = int(item_state.get("a_missing_count") or 0) + 1
+            item_state["a_missing_count"] = missing_count
+            if missing_count < MISSING_COMPLETION_CONFIRMATIONS:
+                LOGGER.info(
+                    "Delaying completion for '%s' in %s until Alexa disappearance is confirmed",
+                    ha_item.summary,
+                    ha_entity,
+                )
+                continue
+            LOGGER.info(
+                "Marking '%s' in %s as completed because it disappeared from %s",
+                ha_item.summary,
+                ha_entity,
+                alexa_label,
+            )
+            client.update_status(ha_entity, ha_item.uid, STATUS_COMPLETED)
+            ha_item.status = STATUS_COMPLETED
+            writes += 1
+            item_state["b_status"] = STATUS_COMPLETED
+            item_state.pop("a_missing_count", None)
 
     if completed_alexa_items:
         if hasattr(alexa, "remove_items"):
