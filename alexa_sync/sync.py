@@ -131,6 +131,7 @@ def sync_alexa_items_with_ha(
     ha_items = index_items(client.get_items(ha_entity))
     stored_items = state.setdefault("items", {})
     keys = set(alexa_items) | set(ha_items) | set(stored_items)
+    completed_alexa_items: list[TodoItem] = []
     writes = 0
 
     for key in sorted(keys):
@@ -181,11 +182,18 @@ def sync_alexa_items_with_ha(
             and ha_item.status == STATUS_COMPLETED
         ):
             LOGGER.info("Removing completed '%s' from Alexa", ha_item.summary)
-            removed = alexa.remove_item(alexa_item)
-            if removed is not False:
-                writes += 1
+            completed_alexa_items.append(alexa_item)
 
         remember(item_state, alexa_item, ha_item)
+
+    if completed_alexa_items:
+        if hasattr(alexa, "remove_items"):
+            writes += alexa.remove_items(completed_alexa_items)
+        else:
+            for alexa_item in completed_alexa_items:
+                removed = alexa.remove_item(alexa_item)
+                if removed is not False:
+                    writes += 1
 
     state["updated_at"] = time.time()
     if save_after:

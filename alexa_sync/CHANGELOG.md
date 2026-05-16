@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.9
+
+- CPU-Last beim Entfernen erledigter Alexa-Eintraege reduziert: mehrere Eintraege werden jetzt in einer geoeffneten Amazon-Liste gebuendelt entfernt.
+- Amazon-Session-Cookies werden pro Chromium-Lauf nur noch einmal geladen, statt bei jedem Listenaufruf erneut.
+
 ## 0.9.8
 
 - Alexa-Eintraege werden robuster entfernt, wenn Amazon die virtuelle Einkaufsliste waehrend Scroll oder Klick neu rendert.

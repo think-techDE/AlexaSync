@@ -156,10 +156,12 @@ class AlexaMediaCookieExtractionTests(unittest.TestCase):
 class ScriptDriver:
     def __init__(self, results: list[dict[str, object]]) -> None:
         self.results = list(results)
-        self.calls: list[tuple[str, str]] = []
+        self.calls: list[tuple[str, tuple[object, ...]]] = []
 
-    def execute_script(self, script: str, wanted: str) -> dict[str, object]:
-        self.calls.append((script, wanted))
+    def execute_script(self, script: str, *args: object) -> dict[str, object]:
+        self.calls.append((script, args))
+        if not args:
+            return {"status": "reset"}
         return self.results.pop(0)
 
 
@@ -183,8 +185,9 @@ class AlexaRemoveItemTests(unittest.TestCase):
 
         self.assertTrue(removed)
         self.assertEqual(client.open_count, 1)
-        self.assertEqual(driver.calls[0][1], "biomuellbeutel")
-        self.assertIn("querySelector", driver.calls[0][0])
+        click_calls = [call for call in driver.calls if call[1]]
+        self.assertEqual(click_calls[0][1][0], "biomuellbeutel")
+        self.assertIn("querySelector", click_calls[0][0])
 
     def test_remove_item_returns_false_after_stable_not_found_scrolls(self) -> None:
         client = TestableAlexaClient()
@@ -201,7 +204,31 @@ class AlexaRemoveItemTests(unittest.TestCase):
             removed = client._remove_item_once(TodoItem(uid="1", summary="Brot", status="needs_action"))
 
         self.assertFalse(removed)
-        self.assertEqual(len(driver.calls), 3)
+        click_calls = [call for call in driver.calls if call[1]]
+        self.assertEqual(len(click_calls), 3)
+
+    def test_remove_items_opens_list_once_for_batch(self) -> None:
+        client = TestableAlexaClient()
+        driver = ScriptDriver(
+            [
+                {"status": "clicked", "text": "A"},
+                {"status": "clicked", "text": "B"},
+            ]
+        )
+        client.driver = driver
+
+        with patch("alexa_client.time.sleep"):
+            removed = client.remove_items(
+                [
+                    TodoItem(uid="1", summary="A", status="needs_action"),
+                    TodoItem(uid="2", summary="B", status="needs_action"),
+                ]
+            )
+
+        self.assertEqual(removed, 2)
+        self.assertEqual(client.open_count, 1)
+        click_calls = [call for call in driver.calls if call[1]]
+        self.assertEqual([call[1][0] for call in click_calls], ["a", "b"])
 
 
 if __name__ == "__main__":

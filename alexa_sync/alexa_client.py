@@ -79,6 +79,41 @@ if (rows.length) {
 return {status: "not-found", lastText, rowCount: rows.length};
 """
 
+RESET_SHOPPING_LIST_SCROLL_SCRIPT = r"""
+const list = document.querySelector(".virtual-list");
+const scrollers = [];
+for (let node = list; node; node = node.parentElement) {
+  if (node.scrollHeight > node.clientHeight) {
+    node.scrollTop = 0;
+    scrollers.push(node.tagName);
+  }
+}
+if (document.scrollingElement) {
+  document.scrollingElement.scrollTop = 0;
+}
+window.scrollTo(0, 0);
+return {status: list ? "reset" : "missing-list", scrollers};
+"""
+
+
+def selenium_remove_retry_exceptions() -> tuple[type[BaseException], ...]:
+    """Return Selenium exceptions that indicate transient DOM changes."""
+    try:
+        from selenium.common.exceptions import (
+            ElementClickInterceptedException,
+            JavascriptException,
+            NoSuchElementException,
+            StaleElementReferenceException,
+        )
+    except ModuleNotFoundError:
+        return ()
+    return (
+        StaleElementReferenceException,
+        NoSuchElementException,
+        ElementClickInterceptedException,
+        JavascriptException,
+    )
+
 
 # ---------------------------------------------------------------------------
 # Account ID helpers
@@ -700,10 +735,12 @@ class InternalAlexaClient:
         self.amazon_domain = amazon_domain
         self.cookie_path = cookie_path or ALEXA_COOKIES_PATH
         self.driver = None
+        self._cookies_loaded = False
 
     def __enter__(self) -> "InternalAlexaClient":
         """Start browser."""
         self.driver = self._create_driver()
+        self._cookies_loaded = False
         return self
 
     def __exit__(self, _exc_type: Any, _exc: Any, _tb: Any) -> None:
@@ -711,6 +748,7 @@ class InternalAlexaClient:
         if self.driver is not None:
             self.driver.quit()
             self.driver = None
+        self._cookies_loaded = False
 
     def _create_driver(self) -> Any:
         """Create a Chromium webdriver."""
@@ -734,6 +772,8 @@ class InternalAlexaClient:
         """Load persisted Amazon cookies into Chromium."""
         if self.driver is None:
             raise RuntimeError("Browser is not running")
+        if self._cookies_loaded:
+            return
         if not self.cookie_path.exists():
             raise RuntimeError("Amazon-Session fehlt. Bitte Cookies in der Weboberflaeche importieren.")
 
@@ -757,6 +797,7 @@ class InternalAlexaClient:
                 LOGGER.debug("Ignoring incompatible Amazon cookie %s", cookie.get("name"), exc_info=True)
         self.driver.refresh()
         time.sleep(2)
+        self._cookies_loaded = True
 
     def _shopping_list_url(self) -> str:
         """Return the Alexa shopping list URL for the configured marketplace."""
@@ -835,39 +876,52 @@ class InternalAlexaClient:
 
     def remove_item(self, item: TodoItem) -> bool:
         """Remove an item from Alexa active list."""
-        from selenium.common.exceptions import (
-            ElementClickInterceptedException,
-            JavascriptException,
-            NoSuchElementException,
-            StaleElementReferenceException,
-        )
+        return self.remove_items([item]) > 0
 
-        last_error: Exception | None = None
-        for attempt in range(1, 4):
-            try:
-                return self._remove_item_once(item)
-            except (
-                StaleElementReferenceException,
-                NoSuchElementException,
-                ElementClickInterceptedException,
-                JavascriptException,
-            ) as exc:
-                last_error = exc
-                LOGGER.debug("Retrying Alexa remove for '%s' after DOM change", item.summary, exc_info=True)
-                time.sleep(attempt)
-        LOGGER.warning("Could not remove '%s' from Alexa after retries: %s", item.summary, last_error)
-        return False
+    def remove_items(self, items: list[TodoItem]) -> int:
+        """Remove multiple items from Alexa while keeping the list page open."""
+        if not items:
+            return 0
+        if self.driver is None:
+            raise RuntimeError("Browser is not running")
+
+        self._open_list()
+        removed_count = 0
+        retry_exceptions = selenium_remove_retry_exceptions()
+        for item in items:
+            last_error: Exception | None = None
+            for attempt in range(1, 4):
+                try:
+                    if self._remove_item_from_open_list(item):
+                        removed_count += 1
+                    break
+                except retry_exceptions as exc:
+                    last_error = exc
+                    LOGGER.debug("Retrying Alexa remove for '%s' after DOM change", item.summary, exc_info=True)
+                    time.sleep(attempt)
+                    self._open_list()
+            else:
+                LOGGER.warning("Could not remove '%s' from Alexa after retries: %s", item.summary, last_error)
+        return removed_count
 
     def _remove_item_once(self, item: TodoItem) -> bool:
         """Remove an item once, returning whether a row was clicked."""
+        if self.driver is None:
+            raise RuntimeError("Browser is not running")
+        self._open_list()
+        return self._remove_item_from_open_list(item)
+
+    def _remove_item_from_open_list(self, item: TodoItem) -> bool:
+        """Remove an item from the currently open Alexa shopping list."""
         from ha_client import normalize_summary
 
         if self.driver is None:
             raise RuntimeError("Browser is not running")
-        self._open_list()
         wanted = normalize_summary(item.summary)
         last_text = None
         stable_rounds = 0
+        self.driver.execute_script(RESET_SHOPPING_LIST_SCROLL_SCRIPT)
+        time.sleep(0.2)
 
         while stable_rounds < 2:
             result = self.driver.execute_script(CLICK_VISIBLE_SHOPPING_LIST_ITEM_SCRIPT, wanted)
