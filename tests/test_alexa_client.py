@@ -174,6 +174,33 @@ class TestableAlexaClient(InternalAlexaClient):
         self.open_count += 1
 
 
+class OpenListDriver:
+    def __init__(self, list_open: bool = True) -> None:
+        self.list_open = list_open
+        self.scripts: list[str] = []
+        self.urls: list[str] = []
+
+    def execute_script(self, script: str, *args: object) -> bool:
+        self.scripts.append(script)
+        return self.list_open
+
+    def get(self, url: str) -> None:
+        self.urls.append(url)
+
+
+class AlexaListCacheTests(unittest.TestCase):
+    def test_open_list_reuses_current_loaded_list_page(self) -> None:
+        client = InternalAlexaClient("amazon.de")
+        driver = OpenListDriver(list_open=True)
+        client.driver = driver
+        client._list_loaded = True
+
+        client._open_list()
+
+        self.assertEqual(driver.urls, [])
+        self.assertEqual(len(driver.scripts), 1)
+
+
 class AlexaRemoveItemTests(unittest.TestCase):
     def test_remove_item_clicks_matching_row_via_dom_script(self) -> None:
         client = TestableAlexaClient()

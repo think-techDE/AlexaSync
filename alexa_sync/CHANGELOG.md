@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.10
+
+- Unnoetige Amazon-Seitenladungen innerhalb eines Sync-Durchlaufs vermieden, wenn die Alexa-Einkaufsliste bereits in Chromium geoeffnet ist.
+- Dadurch sinkt die CPU-Last besonders bei mehreren Schreibvorgaengen oder mehreren erledigten Eintraegen pro Sync.
+
 ## 0.9.9
 
 - CPU-Last beim Entfernen erledigter Alexa-Eintraege reduziert: mehrere Eintraege werden jetzt in einer geoeffneten Amazon-Liste gebuendelt entfernt.

@@ -736,11 +736,13 @@ class InternalAlexaClient:
         self.cookie_path = cookie_path or ALEXA_COOKIES_PATH
         self.driver = None
         self._cookies_loaded = False
+        self._list_loaded = False
 
     def __enter__(self) -> "InternalAlexaClient":
         """Start browser."""
         self.driver = self._create_driver()
         self._cookies_loaded = False
+        self._list_loaded = False
         return self
 
     def __exit__(self, _exc_type: Any, _exc: Any, _tb: Any) -> None:
@@ -749,6 +751,7 @@ class InternalAlexaClient:
             self.driver.quit()
             self.driver = None
         self._cookies_loaded = False
+        self._list_loaded = False
 
     def _create_driver(self) -> Any:
         """Create a Chromium webdriver."""
@@ -798,6 +801,7 @@ class InternalAlexaClient:
         self.driver.refresh()
         time.sleep(2)
         self._cookies_loaded = True
+        self._list_loaded = False
 
     def _shopping_list_url(self) -> str:
         """Return the Alexa shopping list URL for the configured marketplace."""
@@ -809,23 +813,43 @@ class InternalAlexaClient:
             raise RuntimeError("Browser is not running")
         self._load_cookies()
         self.driver.get(self._shopping_list_url())
+        self._list_loaded = False
         time.sleep(3)
         current_url = str(self.driver.current_url).lower()
         page = self.driver.page_source.lower()
-        return "ap/signin" not in current_url and "virtual-list" in page
+        authenticated = "ap/signin" not in current_url and "virtual-list" in page
+        self._list_loaded = authenticated
+        return authenticated
+
+    def _list_is_open(self) -> bool:
+        """Return whether the current browser page already contains the shopping list."""
+        if self.driver is None:
+            raise RuntimeError("Browser is not running")
+        try:
+            return bool(self.driver.execute_script("return Boolean(document.querySelector('.virtual-list'));"))
+        except Exception:
+            return False
 
     def _open_list(self) -> None:
         """Open Alexa shopping list page."""
+        if self.driver is None:
+            raise RuntimeError("Browser is not running")
+        if self._list_loaded and self._list_is_open():
+            return
+        self._load_cookies()
+        if self._list_is_open():
+            self._list_loaded = True
+            return
+
         from selenium.webdriver.common.by import By
         from selenium.webdriver.support import expected_conditions as ec
         from selenium.webdriver.support.ui import WebDriverWait
 
-        if self.driver is None:
-            raise RuntimeError("Browser is not running")
-        self._load_cookies()
         self.driver.get(self._shopping_list_url())
+        self._list_loaded = False
         WebDriverWait(self.driver, 30).until(ec.presence_of_element_located((By.CLASS_NAME, "virtual-list")))
         time.sleep(3)
+        self._list_loaded = True
 
     def get_items(self) -> list[TodoItem]:
         """Return active Alexa shopping list items."""
