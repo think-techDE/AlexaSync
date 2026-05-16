@@ -269,6 +269,23 @@ class HttpAlexaClientTests(unittest.TestCase):
         self.assertIn("version=7", requests_seen[-1][1])
         self.assertIn(b'"itemStatus"', requests_seen[-1][2] or b"")
 
+    def test_http_client_selects_shop_list_type(self) -> None:
+        client = HttpAlexaClient("amazon.de")
+
+        self.assertGreater(
+            client._shopping_score({"listType": "SHOP", "listId": "shopping-list"}),
+            client._shopping_score({"listType": "TODO", "listId": "todo-list"}),
+        )
+        self.assertGreater(
+            client._shopping_score({"listType": "SHOP", "listId": "shopping-list"}),
+            client._shopping_score({"listType": "CUSTOM", "listName": "Baumarkt", "listId": "custom-list"}),
+        )
+
+    def test_http_client_extracts_list_id_from_list_shape(self) -> None:
+        client = HttpAlexaClient("amazon.de")
+
+        self.assertEqual(client._list_id_from_candidate({"id": ["list-id"]}), "list-id")
+
 
 class ScriptDriver:
     def __init__(self, results: list[dict[str, object]]) -> None:

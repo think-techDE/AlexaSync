@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.15
+
+- Alexa-HTTP-Sync erkennt Amazons `listType=SHOP` jetzt als Einkaufsliste.
+- Listen-IDs aus der HTTP-Listenmetadaten-Antwort werden robuster aus String- und Listenformen gelesen.
+
 ## 0.9.14
 
 - Schutz gegen fehlerhafte Massen-Abschluesse: Wenn viele Alexa-Eintraege auf einmal zu fehlen scheinen, werden Home-Assistant-Eintraege nicht automatisch erledigt.

@@ -911,28 +911,37 @@ class HttpAlexaClient:
             value = candidate.get(key)
             if isinstance(value, str) and value:
                 return value
+            if isinstance(value, list):
+                for item in value:
+                    if isinstance(item, str) and item:
+                        return item
         return ""
 
     def _shopping_score(self, candidate: dict[str, Any]) -> int:
         """Score whether a metadata item is the Alexa shopping list."""
-        text = " ".join(
-            str(candidate.get(key) or "")
-            for key in ("listType", "type", "listName", "name", "listId", "id")
-        ).casefold()
+        list_type = str(candidate.get("listType") or candidate.get("type") or "").strip().casefold()
+        name = str(candidate.get("listName") or candidate.get("name") or "").strip().casefold()
+        list_id = self._list_id_from_candidate(candidate).casefold()
+        text = f"{list_type} {name} {list_id}"
         score = 0
+        if list_type == "shop":
+            score += 50
         if "shopping" in text or "einkauf" in text:
             score += 10
         if "shopping_item" in text or "-shopping_item" in text:
             score += 10
-        if "task" in text or "todo" in text or "to-do" in text:
+        if list_type in {"todo", "task"} or "task" in text or "todo" in text or "to-do" in text:
             score -= 10
+        if list_type == "custom":
+            score -= 5
         return score
 
     def _list_candidate_summary(self, candidate: dict[str, Any]) -> str:
         """Return a compact log-safe list metadata summary."""
         fields = []
         for key in ("listType", "type", "listName", "name", "listId", "id"):
-            value = str(candidate.get(key) or "").strip()
+            value = self._list_id_from_candidate(candidate) if key in {"listId", "id"} else str(candidate.get(key) or "")
+            value = value.strip()
             if value:
                 fields.append(f"{key}={value[:60]}")
         return ", ".join(fields) or "unknown"
