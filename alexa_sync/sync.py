@@ -115,8 +115,10 @@ def sync_internal_alexa_once(
     errors: list[str] = []
     account_settings = dict(settings)
     account_settings["remove_completed"] = False
+    accounts = enabled_amazon_accounts(settings)
+    account_settings["allow_missing_completion"] = len(accounts) == 1
 
-    for account in enabled_amazon_accounts(settings):
+    for account in accounts:
         account_state = get_internal_account_state(state, account["id"])
         cookie_path = account_cookie_path(account["id"])
         try:
@@ -180,7 +182,7 @@ def sync_alexa_items_with_ha(
     ha_items = index_items(client.get_items(ha_entity))
     stored_items = state.setdefault("items", {})
     keys = set(alexa_items) | set(ha_items) | set(stored_items)
-    completed_alexa_items: list[TodoItem] = []
+    completed_alexa_items: list[tuple[dict[str, Any], TodoItem]] = []
     missing_completion_candidates: list[tuple[dict[str, Any], TodoItem]] = []
     writes = 0
 
@@ -200,7 +202,14 @@ def sync_alexa_items_with_ha(
                 and item_state.get("b_status") == STATUS_NEEDS_ACTION
                 and ha_item.status == STATUS_NEEDS_ACTION
             ):
-                missing_completion_candidates.append((item_state, ha_item))
+                if settings.get("allow_missing_completion", True):
+                    missing_completion_candidates.append((item_state, ha_item))
+                else:
+                    LOGGER.info(
+                        "Ignoring disappearance for '%s' in %s because multiple Alexa accounts share the target list",
+                        ha_item.summary,
+                        alexa_label,
+                    )
                 remember(item_state, alexa_item, ha_item)
                 continue
             if ha_item.status == STATUS_NEEDS_ACTION:
@@ -223,8 +232,12 @@ def sync_alexa_items_with_ha(
             and settings["sync_completed"]
             and ha_item.status == STATUS_COMPLETED
         ):
-            LOGGER.info("Removing completed '%s' from Alexa", ha_item.summary)
-            completed_alexa_items.append(alexa_item)
+            if item_state.get("b_status") != STATUS_COMPLETED or item_state.get("pending_alexa_remove"):
+                LOGGER.info("Removing completed '%s' from Alexa", ha_item.summary)
+                item_state["pending_alexa_remove"] = True
+                completed_alexa_items.append((item_state, alexa_item))
+            else:
+                LOGGER.debug("Skipping old completed '%s' for Alexa removal", ha_item.summary)
 
         remember(item_state, alexa_item, ha_item)
 
@@ -261,12 +274,16 @@ def sync_alexa_items_with_ha(
 
     if completed_alexa_items:
         if hasattr(alexa, "remove_items"):
-            writes += alexa.remove_items(completed_alexa_items)
+            removed_count = alexa.remove_items([item for _item_state, item in completed_alexa_items])
+            writes += removed_count
+            for item_state, _item in completed_alexa_items[:removed_count]:
+                item_state.pop("pending_alexa_remove", None)
         else:
-            for alexa_item in completed_alexa_items:
+            for item_state, alexa_item in completed_alexa_items:
                 removed = alexa.remove_item(alexa_item)
                 if removed is not False:
                     writes += 1
+                    item_state.pop("pending_alexa_remove", None)
 
     state["updated_at"] = time.time()
     if save_after:

@@ -86,6 +86,63 @@ class SyncCompletedRemovalTests(unittest.TestCase):
         self.assertEqual(alexa.removed_batches, [["A", "B"]])
         self.assertEqual(alexa.remove_item_calls, [])
 
+    def test_old_completed_ha_item_is_not_removed_from_alexa_again(self) -> None:
+        alexa = FakeAlexa([TodoItem(uid="a", summary="A", status=STATUS_NEEDS_ACTION)])
+        ha = FakeHomeAssistant([TodoItem(uid="ha-a", summary="A", status=STATUS_COMPLETED)])
+        settings = {"sync_completed": True, "remove_completed": False}
+        state = {
+            "items": {
+                "a": {
+                    "a_uid": "a",
+                    "a_status": STATUS_NEEDS_ACTION,
+                    "b_uid": "ha-a",
+                    "b_status": STATUS_COMPLETED,
+                }
+            }
+        }
+
+        writes = sync_alexa_items_with_ha(
+            alexa,
+            ha,
+            "todo.einkauf",
+            settings,
+            state,
+            alexa_label="Alexa",
+            save_after=False,
+        )
+
+        self.assertEqual(writes, 0)
+        self.assertEqual(alexa.removed_batches, [])
+
+    def test_new_completed_ha_item_is_removed_from_alexa(self) -> None:
+        alexa = FakeAlexa([TodoItem(uid="a", summary="A", status=STATUS_NEEDS_ACTION)])
+        ha = FakeHomeAssistant([TodoItem(uid="ha-a", summary="A", status=STATUS_COMPLETED)])
+        settings = {"sync_completed": True, "remove_completed": False}
+        state = {
+            "items": {
+                "a": {
+                    "a_uid": "a",
+                    "a_status": STATUS_NEEDS_ACTION,
+                    "b_uid": "ha-a",
+                    "b_status": STATUS_NEEDS_ACTION,
+                }
+            }
+        }
+
+        writes = sync_alexa_items_with_ha(
+            alexa,
+            ha,
+            "todo.einkauf",
+            settings,
+            state,
+            alexa_label="Alexa",
+            save_after=False,
+        )
+
+        self.assertEqual(writes, 1)
+        self.assertEqual(alexa.removed_batches, [["A"]])
+        self.assertNotIn("pending_alexa_remove", state["items"]["a"])
+
 
 class SyncAlexaDisappearanceTests(unittest.TestCase):
     def test_missing_alexa_item_must_be_confirmed_before_completion(self) -> None:
@@ -143,6 +200,38 @@ class SyncAlexaDisappearanceTests(unittest.TestCase):
                     "b_status": STATUS_NEEDS_ACTION,
                 }
                 for index in range(6)
+            }
+        }
+
+        writes = sync_alexa_items_with_ha(
+            alexa,
+            ha,
+            "todo.einkauf",
+            settings,
+            state,
+            alexa_label="Alexa",
+            save_after=False,
+        )
+
+        self.assertEqual(writes, 0)
+        self.assertEqual(ha.status_updates, [])
+
+    def test_multi_account_disappearance_does_not_complete_or_recreate(self) -> None:
+        alexa = FakeAlexa([])
+        ha = UpdatingHomeAssistant([TodoItem(uid="ha-a", summary="A", status=STATUS_NEEDS_ACTION)])
+        settings = {
+            "sync_completed": True,
+            "remove_completed": False,
+            "allow_missing_completion": False,
+        }
+        state = {
+            "items": {
+                "a": {
+                    "a_uid": "a",
+                    "a_status": STATUS_NEEDS_ACTION,
+                    "b_uid": "ha-a",
+                    "b_status": STATUS_NEEDS_ACTION,
+                }
             }
         }
 

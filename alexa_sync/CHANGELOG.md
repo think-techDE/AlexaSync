@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.16
+
+- Bereits bekannte erledigte Home-Assistant-Eintraege loesen keine nachtraegliche Alexa-Entfernung mehr aus.
+- Bei mehreren aktiven Amazon-Konten wird ein in einem einzelnen Konto fehlender Alexa-Eintrag nicht mehr als global erledigt gewertet.
+
 ## 0.9.15
 
 - Alexa-HTTP-Sync erkennt Amazons `listType=SHOP` jetzt als Einkaufsliste.
