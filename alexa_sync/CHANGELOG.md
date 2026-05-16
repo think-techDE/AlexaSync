@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.12
+
+- Alexa-HTTP-Sync auf die aktuellen internen Listen-V2-Endpunkte umgestellt (`/lists/fetch`, `/items/fetch`).
+- Cookie-Header werden fuer HTTP ohne zusaetzliches Quoting uebernommen, damit AMP-Cookies unveraendert an Amazon gehen.
+- HTTP-Cookies werden wie im Browser nach Request-Host gefiltert.
+- HTTP-Fallback-Logs enthalten jetzt den konkreten HTTP-Fehler statt nur eine generische Authentifizierungswarnung.
+
 ## 0.9.11
 
 - Neuer HTTP-Sync-Pfad fuer Alexa-Shopping-Listen: AMP-Cookies werden zuerst direkt gegen Amazons interne Listen-Endpunkte genutzt.

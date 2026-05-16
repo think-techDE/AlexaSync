@@ -17,6 +17,7 @@ from alexa_client import (  # noqa: E402
     HttpAlexaClient,
     InternalAlexaClient,
     cookie_header_from_cookie_list,
+    cookie_matches_host,
     extract_alexa_media_cookies,
     import_selected_alexa_media_sessions,
     load_alexa_media_cookie_pickle,
@@ -182,6 +183,21 @@ class HttpAlexaClientTests(unittest.TestCase):
         self.assertIn("session-id=session-value", header)
         self.assertNotIn("old=", header)
 
+    def test_cookie_header_filters_by_request_host(self) -> None:
+        cookies = [
+            {"name": "session-id", "value": "root", "domain": ".amazon.de"},
+            {"name": "ubid-main", "value": "www", "domain": "www.amazon.de"},
+            {"name": "csrf", "value": "alexa", "domain": "alexa.amazon.de"},
+        ]
+
+        self.assertTrue(cookie_matches_host(cookies[0], "www.amazon.de"))
+        self.assertFalse(cookie_matches_host(cookies[2], "www.amazon.de"))
+        header = cookie_header_from_cookie_list(cookies, "www.amazon.de")
+
+        self.assertIn("session-id=root", header)
+        self.assertIn("ubid-main=www", header)
+        self.assertNotIn("csrf=alexa", header)
+
     def test_http_client_reads_adds_and_completes_items(self) -> None:
         requests_seen: list[tuple[str, str, bytes | None]] = []
 
@@ -190,7 +206,7 @@ class HttpAlexaClientTests(unittest.TestCase):
             method = http_request.get_method()
             url = http_request.full_url
             requests_seen.append((method, url, http_request.data))
-            if url.endswith("/lists"):
+            if method == "POST" and url.endswith("/lists/fetch"):
                 return FakeHTTPResponse(
                     {
                         "listInfoList": [
@@ -202,7 +218,7 @@ class HttpAlexaClientTests(unittest.TestCase):
                         ]
                     }
                 )
-            if method == "GET" and url.endswith("/lists/SHOPPING-LIST/items"):
+            if method == "POST" and url.endswith("/lists/SHOPPING-LIST/items/fetch?limit=100"):
                 return FakeHTTPResponse(
                     {
                         "listItemInfoList": [
@@ -244,7 +260,7 @@ class HttpAlexaClientTests(unittest.TestCase):
 
         self.assertEqual([item.summary for item in items], ["Milch"])
         self.assertEqual(removed, 1)
-        self.assertEqual([method for method, _url, _data in requests_seen], ["GET", "GET", "POST", "PUT"])
+        self.assertEqual([method for method, _url, _data in requests_seen], ["POST", "POST", "POST", "PUT"])
         self.assertIn("version=7", requests_seen[-1][1])
         self.assertIn(b'"itemStatus"', requests_seen[-1][2] or b"")
 

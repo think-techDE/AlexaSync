@@ -89,6 +89,9 @@ def sync_account_with_alexa_client(
 ) -> int:
     """Synchronize one configured Amazon account with an Alexa client."""
     if not alexa.is_authenticated():
+        detail = getattr(alexa, "last_auth_error", None)
+        if detail:
+            raise RuntimeError(f"Amazon-Session ist nicht authentifiziert. HTTP-Details: {detail}")
         raise RuntimeError("Amazon-Session ist nicht authentifiziert.")
     return sync_alexa_items_with_ha(
         alexa,

@@ -8,7 +8,6 @@ import pickle
 import re
 import time
 from email.utils import parsedate_to_datetime
-from http.cookies import SimpleCookie
 from pathlib import Path
 from typing import Any
 from urllib import error, parse, request
@@ -184,20 +183,37 @@ def load_cookie_list(path: Path) -> list[dict[str, Any]]:
     return [cookie for cookie in cookies if isinstance(cookie, dict)]
 
 
-def cookie_header_from_cookie_list(cookies: list[dict[str, Any]]) -> str:
+def cookie_matches_host(cookie: dict[str, Any], host: str) -> bool:
+    """Return whether a stored cookie should be sent to host."""
+    domain = str(cookie.get("domain") or "").strip().lower()
+    if not domain:
+        return True
+    host = host.strip().lower()
+    if domain.startswith("."):
+        domain = domain[1:]
+        return host == domain or host.endswith(f".{domain}")
+    return host == domain
+
+
+def cookie_header_from_cookie_list(cookies: list[dict[str, Any]], host: str | None = None) -> str:
     """Return a Cookie header from stored Selenium-style cookies."""
-    simple_cookie = SimpleCookie()
     now = int(time.time())
+    values: list[str] = []
     for cookie in cookies:
+        if host is not None and not cookie_matches_host(cookie, host):
+            continue
         name = str(cookie.get("name") or "").strip()
         value = cookie.get("value")
         expiry = cookie.get("expiry")
         if not name or value is None:
             continue
+        if any(character in name for character in "\r\n;="):
+            continue
         if isinstance(expiry, (int, float)) and expiry <= now:
             continue
-        simple_cookie[name] = str(value)
-    return simple_cookie.output(header="", sep=";").strip()
+        cookie_value = str(value).replace("\r", "").replace("\n", "")
+        values.append(f"{name}={cookie_value}")
+    return "; ".join(values)
 
 
 def csrf_from_cookie_list(cookies: list[dict[str, Any]]) -> str:
@@ -786,11 +802,12 @@ class HttpAlexaClient:
         self.csrf = ""
         self.shopping_list_id: str | None = None
         self.item_versions: dict[str, int] = {}
+        self.last_auth_error: str | None = None
 
     def __enter__(self) -> "HttpAlexaClient":
         """Load session cookies."""
         self.cookies = load_cookie_list(self.cookie_path)
-        self.cookie_header = cookie_header_from_cookie_list(self.cookies)
+        self.cookie_header = cookie_header_from_cookie_list(self.cookies, f"www.{self.amazon_domain}")
         self.csrf = csrf_from_cookie_list(self.cookies)
         if not self.cookie_header:
             raise RuntimeError("Amazon-Session enthaelt keine nutzbaren Cookies.")
@@ -859,7 +876,11 @@ class HttpAlexaClient:
 
     def _list_candidates(self) -> list[dict[str, Any]]:
         """Return available Alexa list metadata."""
-        response = self._request_json("GET", f"{self._shopping_api_base()}/lists")
+        response = self._request_json(
+            "POST",
+            f"{self._shopping_api_base()}/lists/fetch",
+            {"listAttributesToAggregate": ["totalActiveItemsCount"]},
+        )
         raw_lists = response.get("listInfoList") or response.get("lists") or []
         return raw_lists if isinstance(raw_lists, list) else []
 
@@ -907,9 +928,11 @@ class HttpAlexaClient:
         """Return if stored cookies can access the Alexa shopping list endpoints."""
         try:
             self._ensure_shopping_list_id()
-        except Exception:
-            LOGGER.debug("Alexa HTTP auth/list check failed", exc_info=True)
+        except Exception as exc:
+            self.last_auth_error = str(exc)
+            LOGGER.debug("Alexa HTTP auth/list check failed: %s", exc, exc_info=True)
             return False
+        self.last_auth_error = None
         return True
 
     def _extract_items(self, response: dict[str, Any]) -> list[dict[str, Any]]:
@@ -920,8 +943,22 @@ class HttpAlexaClient:
     def get_items(self) -> list[TodoItem]:
         """Return active Alexa shopping list items via HTTP."""
         list_id = self._ensure_shopping_list_id()
-        url = f"{self._shopping_api_base()}/lists/{self._quote(list_id)}/items"
-        response = self._request_json("GET", url)
+        url = f"{self._shopping_api_base()}/lists/{self._quote(list_id)}/items/fetch?limit=100"
+        response = self._request_json(
+            "POST",
+            url,
+            {
+                "itemAttributesToProject": [
+                    "itemId",
+                    "itemName",
+                    "itemStatus",
+                    "version",
+                    "customerId",
+                    "createdTime",
+                    "updatedTime",
+                ]
+            },
+        )
         items: list[TodoItem] = []
         self.item_versions = {}
         for raw_item in self._extract_items(response):
@@ -943,10 +980,11 @@ class HttpAlexaClient:
         list_id = self._ensure_shopping_list_id()
         url = f"{self._shopping_api_base()}/lists/{self._quote(list_id)}/items"
         payload = {
-            "itemsToCreate": [
+            "items": [
                 {
                     "itemName": item.summary,
                     "itemStatus": SHOPPING_LIST_ITEM_STATUS_ACTIVE,
+                    "itemType": "KEYWORD",
                 }
             ]
         }
