@@ -8,8 +8,10 @@ import pickle
 import re
 import time
 from email.utils import parsedate_to_datetime
+from http.cookies import SimpleCookie
 from pathlib import Path
 from typing import Any
+from urllib import error, parse, request
 
 from settings import (
     ALEXA_ACCOUNTS_DIR,
@@ -21,6 +23,13 @@ from settings import (
 from ha_client import TodoItem
 
 LOGGER = logging.getLogger("alexa_sync")
+
+HTTP_USER_AGENT = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+)
+SHOPPING_LIST_ITEM_STATUS_ACTIVE = "ACTIVE"
+SHOPPING_LIST_ITEM_STATUS_COMPLETE = "COMPLETE"
 
 CLICK_VISIBLE_SHOPPING_LIST_ITEM_SCRIPT = r"""
 const wanted = arguments[0];
@@ -159,6 +168,44 @@ def read_cookie_count(path: Path) -> int:
     except (OSError, json.JSONDecodeError):
         return 0
     return len(cookies) if isinstance(cookies, list) else 0
+
+
+def load_cookie_list(path: Path) -> list[dict[str, Any]]:
+    """Load stored Amazon cookies from JSON."""
+    if not path.exists():
+        raise RuntimeError("Amazon-Session fehlt. Bitte Cookies in der Weboberflaeche importieren.")
+    try:
+        with path.open("r", encoding="utf-8") as cookie_file:
+            cookies = json.load(cookie_file)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError("Amazon-Cookie-Datei konnte nicht gelesen werden.") from exc
+    if not isinstance(cookies, list):
+        raise RuntimeError("Cookie-Datei muss eine JSON-Liste enthalten.")
+    return [cookie for cookie in cookies if isinstance(cookie, dict)]
+
+
+def cookie_header_from_cookie_list(cookies: list[dict[str, Any]]) -> str:
+    """Return a Cookie header from stored Selenium-style cookies."""
+    simple_cookie = SimpleCookie()
+    now = int(time.time())
+    for cookie in cookies:
+        name = str(cookie.get("name") or "").strip()
+        value = cookie.get("value")
+        expiry = cookie.get("expiry")
+        if not name or value is None:
+            continue
+        if isinstance(expiry, (int, float)) and expiry <= now:
+            continue
+        simple_cookie[name] = str(value)
+    return simple_cookie.output(header="", sep=";").strip()
+
+
+def csrf_from_cookie_list(cookies: list[dict[str, Any]]) -> str:
+    """Return the csrf cookie value if present."""
+    for cookie in cookies:
+        if str(cookie.get("name") or "").casefold() == "csrf":
+            return str(cookie.get("value") or "")
+    return ""
 
 
 # ---------------------------------------------------------------------------
@@ -724,6 +771,222 @@ def import_selected_alexa_media_sessions(settings: dict[str, Any], source_names:
 
 
 # ---------------------------------------------------------------------------
+# HTTP Alexa client
+# ---------------------------------------------------------------------------
+
+class HttpAlexaClient:
+    """Lightweight Alexa shopping list client using Amazon's internal HTTP endpoints."""
+
+    def __init__(self, amazon_domain: str, cookie_path: Path | None = None) -> None:
+        """Initialize client."""
+        self.amazon_domain = normalize_amazon_domain(amazon_domain)
+        self.cookie_path = cookie_path or ALEXA_COOKIES_PATH
+        self.cookies: list[dict[str, Any]] = []
+        self.cookie_header = ""
+        self.csrf = ""
+        self.shopping_list_id: str | None = None
+        self.item_versions: dict[str, int] = {}
+
+    def __enter__(self) -> "HttpAlexaClient":
+        """Load session cookies."""
+        self.cookies = load_cookie_list(self.cookie_path)
+        self.cookie_header = cookie_header_from_cookie_list(self.cookies)
+        self.csrf = csrf_from_cookie_list(self.cookies)
+        if not self.cookie_header:
+            raise RuntimeError("Amazon-Session enthaelt keine nutzbaren Cookies.")
+        return self
+
+    def __exit__(self, _exc_type: Any, _exc: Any, _tb: Any) -> None:
+        """Clear per-run caches."""
+        self.shopping_list_id = None
+        self.item_versions = {}
+
+    def _alexa_api_base(self) -> str:
+        """Return Alexa web API base URL."""
+        return f"https://alexa.{self.amazon_domain}"
+
+    def _shopping_api_base(self) -> str:
+        """Return Amazon shopping-list API base URL."""
+        return f"https://www.{self.amazon_domain}/alexashoppinglists/api/v2"
+
+    def _headers(self) -> dict[str, str]:
+        """Return HTTP headers for Amazon internal API calls."""
+        headers = {
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Content-Type": "application/json",
+            "Cookie": self.cookie_header,
+            "Origin": self._alexa_api_base(),
+            "Referer": f"{self._alexa_api_base()}/spa/index.html",
+            "User-Agent": HTTP_USER_AGENT,
+        }
+        if self.csrf:
+            headers["csrf"] = self.csrf
+        return headers
+
+    def _request_json(
+        self,
+        method: str,
+        url: str,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Call an Amazon internal endpoint and return a JSON object."""
+        data = None
+        if payload is not None:
+            data = json.dumps(payload, ensure_ascii=True).encode("utf-8")
+        http_request = request.Request(url, data=data, headers=self._headers(), method=method)
+        try:
+            with request.urlopen(http_request, timeout=20) as response:
+                body = response.read().decode("utf-8", errors="replace")
+        except error.HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"Alexa-HTTP-Anfrage fehlgeschlagen ({exc.code}): {body[:200]}") from exc
+        except error.URLError as exc:
+            raise RuntimeError(f"Alexa-HTTP-Anfrage fehlgeschlagen: {exc}") from exc
+        if not body.strip():
+            return {}
+        try:
+            parsed = json.loads(body)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"Alexa-HTTP-Antwort war kein JSON: {body[:200]}") from exc
+        if not isinstance(parsed, dict):
+            raise RuntimeError("Alexa-HTTP-Antwort war kein JSON-Objekt.")
+        return parsed
+
+    def _quote(self, value: str) -> str:
+        """Quote a path value for Amazon internal endpoints."""
+        return parse.quote(value, safe="")
+
+    def _list_candidates(self) -> list[dict[str, Any]]:
+        """Return available Alexa list metadata."""
+        response = self._request_json("GET", f"{self._shopping_api_base()}/lists")
+        raw_lists = response.get("listInfoList") or response.get("lists") or []
+        return raw_lists if isinstance(raw_lists, list) else []
+
+    def _list_id_from_candidate(self, candidate: dict[str, Any]) -> str:
+        """Extract a list id from an Alexa list metadata item."""
+        for key in ("listId", "id"):
+            value = candidate.get(key)
+            if isinstance(value, str) and value:
+                return value
+        return ""
+
+    def _shopping_score(self, candidate: dict[str, Any]) -> int:
+        """Score whether a metadata item is the Alexa shopping list."""
+        text = " ".join(
+            str(candidate.get(key) or "")
+            for key in ("listType", "type", "listName", "name", "listId", "id")
+        ).casefold()
+        score = 0
+        if "shopping" in text or "einkauf" in text:
+            score += 10
+        if "shopping_item" in text or "-shopping_item" in text:
+            score += 10
+        if "task" in text or "todo" in text or "to-do" in text:
+            score -= 10
+        return score
+
+    def _ensure_shopping_list_id(self) -> str:
+        """Return and cache the Alexa shopping list id."""
+        if self.shopping_list_id:
+            return self.shopping_list_id
+        candidates = [
+            candidate
+            for candidate in self._list_candidates()
+            if isinstance(candidate, dict) and self._list_id_from_candidate(candidate)
+        ]
+        if not candidates:
+            raise RuntimeError("Alexa-HTTP konnte keine Listenmetadaten lesen.")
+        best = max(candidates, key=self._shopping_score)
+        if self._shopping_score(best) <= 0:
+            raise RuntimeError("Alexa-HTTP konnte die Einkaufsliste nicht eindeutig finden.")
+        self.shopping_list_id = self._list_id_from_candidate(best)
+        return self.shopping_list_id
+
+    def is_authenticated(self) -> bool:
+        """Return if stored cookies can access the Alexa shopping list endpoints."""
+        try:
+            self._ensure_shopping_list_id()
+        except Exception:
+            LOGGER.debug("Alexa HTTP auth/list check failed", exc_info=True)
+            return False
+        return True
+
+    def _extract_items(self, response: dict[str, Any]) -> list[dict[str, Any]]:
+        """Extract list items from known Alexa response shapes."""
+        raw_items = response.get("listItemInfoList") or response.get("items") or []
+        return raw_items if isinstance(raw_items, list) else []
+
+    def get_items(self) -> list[TodoItem]:
+        """Return active Alexa shopping list items via HTTP."""
+        list_id = self._ensure_shopping_list_id()
+        url = f"{self._shopping_api_base()}/lists/{self._quote(list_id)}/items"
+        response = self._request_json("GET", url)
+        items: list[TodoItem] = []
+        self.item_versions = {}
+        for raw_item in self._extract_items(response):
+            if not isinstance(raw_item, dict):
+                continue
+            summary = str(raw_item.get("itemName") or raw_item.get("value") or "").strip()
+            uid = str(raw_item.get("itemId") or raw_item.get("id") or "").strip()
+            status = str(raw_item.get("itemStatus") or raw_item.get("status") or "").upper()
+            version = raw_item.get("version")
+            if not summary or not uid or status == SHOPPING_LIST_ITEM_STATUS_COMPLETE:
+                continue
+            if isinstance(version, int):
+                self.item_versions[uid] = version
+            items.append(TodoItem(uid=uid, summary=summary, status=STATUS_NEEDS_ACTION))
+        return items
+
+    def add_item(self, item: TodoItem) -> None:
+        """Add an item to Alexa via HTTP."""
+        list_id = self._ensure_shopping_list_id()
+        url = f"{self._shopping_api_base()}/lists/{self._quote(list_id)}/items"
+        payload = {
+            "itemsToCreate": [
+                {
+                    "itemName": item.summary,
+                    "itemStatus": SHOPPING_LIST_ITEM_STATUS_ACTIVE,
+                }
+            ]
+        }
+        self._request_json("POST", url, payload)
+
+    def remove_item(self, item: TodoItem) -> bool:
+        """Mark one Alexa item as complete via HTTP."""
+        return self.remove_items([item]) > 0
+
+    def remove_items(self, items: list[TodoItem]) -> int:
+        """Mark multiple Alexa items as complete via HTTP."""
+        if not items:
+            return 0
+        if any(item.uid not in self.item_versions for item in items):
+            self.get_items()
+        list_id = self._ensure_shopping_list_id()
+        removed = 0
+        for item in items:
+            item_id = item.uid
+            version = self.item_versions.get(item_id)
+            if version is None:
+                LOGGER.debug("Alexa HTTP item '%s' has no cached version", item.summary)
+                continue
+            query = parse.urlencode({"version": version})
+            url = (
+                f"{self._shopping_api_base()}/lists/{self._quote(list_id)}"
+                f"/items/{self._quote(item_id)}?{query}"
+            )
+            payload = {
+                "itemAttributesToUpdate": [
+                    {"type": "itemStatus", "value": SHOPPING_LIST_ITEM_STATUS_COMPLETE}
+                ],
+                "itemAttributesToRemove": [],
+            }
+            self._request_json("PUT", url, payload)
+            removed += 1
+        return removed
+
+
+# ---------------------------------------------------------------------------
 # InternalAlexaClient
 # ---------------------------------------------------------------------------
 
@@ -777,14 +1040,9 @@ class InternalAlexaClient:
             raise RuntimeError("Browser is not running")
         if self._cookies_loaded:
             return
-        if not self.cookie_path.exists():
-            raise RuntimeError("Amazon-Session fehlt. Bitte Cookies in der Weboberflaeche importieren.")
 
         self.driver.get(f"https://www.{self.amazon_domain}")
-        with self.cookie_path.open("r", encoding="utf-8") as cookie_file:
-            cookies = json.load(cookie_file)
-        if not isinstance(cookies, list):
-            raise RuntimeError("Cookie-Datei muss eine JSON-Liste enthalten.")
+        cookies = load_cookie_list(self.cookie_path)
 
         for cookie in cookies:
             if not isinstance(cookie, dict) or "name" not in cookie or "value" not in cookie:

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.11
+
+- Neuer HTTP-Sync-Pfad fuer Alexa-Shopping-Listen: AMP-Cookies werden zuerst direkt gegen Amazons interne Listen-Endpunkte genutzt.
+- Chromium/Selenium wird nur noch als Fallback gestartet, wenn der HTTP-Pfad fuer ein Konto fehlschlaegt.
+
 ## 0.9.10
 
 - Unnoetige Amazon-Seitenladungen innerhalb eines Sync-Durchlaufs vermieden, wenn die Alexa-Einkaufsliste bereits in Chromium geoeffnet ist.

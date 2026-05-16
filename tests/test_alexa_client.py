@@ -4,6 +4,7 @@ import sys
 import time
 import unittest
 import pickle
+import json
 import tempfile
 from http.cookies import Morsel, SimpleCookie
 from http.cookiejar import Cookie
@@ -13,7 +14,9 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "alexa_sync"))
 
 from alexa_client import (  # noqa: E402
+    HttpAlexaClient,
     InternalAlexaClient,
+    cookie_header_from_cookie_list,
     extract_alexa_media_cookies,
     import_selected_alexa_media_sessions,
     load_alexa_media_cookie_pickle,
@@ -151,6 +154,99 @@ class AlexaMediaCookieExtractionTests(unittest.TestCase):
 
         account_ids = [account["id"] for account in result["settings"]["amazon_accounts"]]
         self.assertEqual(account_ids, ["ben@think-tech.eu", "mary_mausi025@web.de"])
+
+
+class FakeHTTPResponse:
+    def __init__(self, payload: dict[str, object]) -> None:
+        self.payload = payload
+
+    def __enter__(self) -> "FakeHTTPResponse":
+        return self
+
+    def __exit__(self, _exc_type: object, _exc: object, _tb: object) -> None:
+        return None
+
+    def read(self) -> bytes:
+        return json.dumps(self.payload).encode("utf-8")
+
+
+class HttpAlexaClientTests(unittest.TestCase):
+    def test_cookie_header_skips_expired_cookies(self) -> None:
+        cookies = [
+            {"name": "session-id", "value": "session-value", "expiry": int(time.time()) + 60},
+            {"name": "old", "value": "old-value", "expiry": int(time.time()) - 60},
+        ]
+
+        header = cookie_header_from_cookie_list(cookies)
+
+        self.assertIn("session-id=session-value", header)
+        self.assertNotIn("old=", header)
+
+    def test_http_client_reads_adds_and_completes_items(self) -> None:
+        requests_seen: list[tuple[str, str, bytes | None]] = []
+
+        def fake_urlopen(http_request: object, timeout: int) -> FakeHTTPResponse:
+            del timeout
+            method = http_request.get_method()
+            url = http_request.full_url
+            requests_seen.append((method, url, http_request.data))
+            if url.endswith("/lists"):
+                return FakeHTTPResponse(
+                    {
+                        "listInfoList": [
+                            {
+                                "listId": "SHOPPING-LIST",
+                                "listName": "Alexa Einkaufsliste",
+                                "listType": "SHOPPING_ITEM",
+                            }
+                        ]
+                    }
+                )
+            if method == "GET" and url.endswith("/lists/SHOPPING-LIST/items"):
+                return FakeHTTPResponse(
+                    {
+                        "listItemInfoList": [
+                            {
+                                "itemId": "item-1",
+                                "itemName": "Milch",
+                                "itemStatus": "ACTIVE",
+                                "version": 7,
+                            },
+                            {
+                                "itemId": "item-2",
+                                "itemName": "Alt",
+                                "itemStatus": "COMPLETE",
+                                "version": 2,
+                            },
+                        ]
+                    }
+                )
+            return FakeHTTPResponse({})
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            cookie_path = Path(tmp_dir) / "cookies.json"
+            cookie_path.write_text(
+                json.dumps(
+                    [
+                        {"name": "csrf", "value": "csrf-token"},
+                        {"name": "session-id", "value": "session-value"},
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            with patch("alexa_client.request.urlopen", side_effect=fake_urlopen):
+                with HttpAlexaClient("amazon.de", cookie_path) as client:
+                    self.assertTrue(client.is_authenticated())
+                    items = client.get_items()
+                    client.add_item(TodoItem(uid="new", summary="Brot", status="needs_action"))
+                    removed = client.remove_items(items)
+
+        self.assertEqual([item.summary for item in items], ["Milch"])
+        self.assertEqual(removed, 1)
+        self.assertEqual([method for method, _url, _data in requests_seen], ["GET", "GET", "POST", "PUT"])
+        self.assertIn("version=7", requests_seen[-1][1])
+        self.assertIn(b'"itemStatus"', requests_seen[-1][2] or b"")
 
 
 class ScriptDriver:

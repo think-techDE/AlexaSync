@@ -8,7 +8,13 @@ from typing import Any
 
 from settings import STATUS_NEEDS_ACTION, STATUS_COMPLETED, save_state
 from ha_client import HomeAssistantClient, TodoItem, index_items
-from alexa_client import InternalAlexaClient, account_cookie_path, enabled_amazon_accounts, sanitize_account_id
+from alexa_client import (
+    HttpAlexaClient,
+    InternalAlexaClient,
+    account_cookie_path,
+    enabled_amazon_accounts,
+    sanitize_account_id,
+)
 
 LOGGER = logging.getLogger("alexa_sync")
 
@@ -73,10 +79,32 @@ def get_internal_account_state(state: dict[str, Any], account_id: str) -> dict[s
     return account_states[safe_id]
 
 
+def sync_account_with_alexa_client(
+    alexa: Any,
+    client: HomeAssistantClient,
+    settings: dict[str, Any],
+    account: dict[str, Any],
+    account_state: dict[str, Any],
+    account_settings: dict[str, Any],
+) -> int:
+    """Synchronize one configured Amazon account with an Alexa client."""
+    if not alexa.is_authenticated():
+        raise RuntimeError("Amazon-Session ist nicht authentifiziert.")
+    return sync_alexa_items_with_ha(
+        alexa,
+        client,
+        settings["ha_list"],
+        account_settings,
+        account_state,
+        alexa_label=f"Alexa-Liste {account['name']}",
+        save_after=False,
+    )
+
+
 def sync_internal_alexa_once(
     client: HomeAssistantClient, settings: dict[str, Any], state: dict[str, Any]
 ) -> int:
-    """Synchronize one or more built-in Alexa Selenium clients with one HA list."""
+    """Synchronize one or more Alexa accounts with one HA list."""
     writes = 0
     errors: list[str] = []
     account_settings = dict(settings)
@@ -86,18 +114,33 @@ def sync_internal_alexa_once(
         account_state = get_internal_account_state(state, account["id"])
         cookie_path = account_cookie_path(account["id"])
         try:
-            with InternalAlexaClient(account["amazon_domain"], cookie_path) as alexa:
-                if not alexa.is_authenticated():
-                    raise RuntimeError("Amazon-Session ist nicht authentifiziert.")
-                writes += sync_alexa_items_with_ha(
-                    alexa,
-                    client,
-                    settings["ha_list"],
-                    account_settings,
-                    account_state,
-                    alexa_label=f"Alexa-Liste {account['name']}",
-                    save_after=False,
+            try:
+                LOGGER.debug("Trying Alexa HTTP sync for Amazon account %s", account["name"])
+                with HttpAlexaClient(account["amazon_domain"], cookie_path) as alexa:
+                    writes += sync_account_with_alexa_client(
+                        alexa,
+                        client,
+                        settings,
+                        account,
+                        account_state,
+                        account_settings,
+                    )
+                LOGGER.debug("Alexa HTTP sync succeeded for Amazon account %s", account["name"])
+            except Exception as http_exc:
+                LOGGER.warning(
+                    "Alexa HTTP sync failed for %s, falling back to Chromium: %s",
+                    account["name"],
+                    http_exc,
                 )
+                with InternalAlexaClient(account["amazon_domain"], cookie_path) as alexa:
+                    writes += sync_account_with_alexa_client(
+                        alexa,
+                        client,
+                        settings,
+                        account,
+                        account_state,
+                        account_settings,
+                    )
         except Exception as exc:
             LOGGER.exception("Sync failed for Amazon account %s", account["name"])
             errors.append(f"{account['name']}: {exc}")
