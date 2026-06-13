@@ -1,7 +1,7 @@
 name: Alexa Sync
-version: "0.9.16"
+version: "0.9.17"
 slug: alexa_sync
-description: Synchronize the Alexa shopping list with a Home Assistant to-do list.
+description: Synchronize the Alexa shopping list with Home Assistant to-do lists.
 url: https://github.com/think-techDE/AlexaSync
 arch:
   - aarch64
@@ -20,6 +20,7 @@ panel_icon: mdi:cart
 options:
   amazon_domain: amazon.de
   ha_list: ""
+  ha_lists: []
   interval_seconds: 150
   sync_completed: true
   remove_completed: false
@@ -27,6 +28,8 @@ options:
 schema:
   amazon_domain: str
   ha_list: str?
+  ha_lists:
+    - str
   interval_seconds: int(30,3600)
   sync_completed: bool
   remove_completed: bool

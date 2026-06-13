@@ -1,13 +1,13 @@
 # Alexa Sync Add-on
 
-Synchronisiert eine oder mehrere Alexa-Einkaufslisten mit einer
-Home-Assistant-`todo`-Liste, typischerweise der Bring-Einkaufsliste.
+Synchronisiert eine oder mehrere Alexa-Einkaufslisten mit einer oder mehreren
+Home-Assistant-`todo`-Listen, typischerweise Bring- oder Einkaufslisten.
 
 ## Kurzfassung
 
 1. Alexa Media Player in Home Assistant einrichten.
 2. Alexa Sync starten.
-3. Ziel-Liste auswaehlen.
+3. Eine oder mehrere Ziel-Listen auswaehlen.
 4. **Sessions uebernehmen** klicken.
 5. Optional manuell **Jetzt synchronisieren** ausfuehren.
 
@@ -15,9 +15,9 @@ Home-Assistant-`todo`-Liste, typischerweise der Bring-Einkaufsliste.
 
 ### Ziel
 
-Waehle die Home-Assistant-`todo`-Liste, die als gemeinsame Einkaufsliste genutzt
-werden soll. Alle importierten Alexa-Konten werden gegen diese Liste
-synchronisiert.
+Waehle eine oder mehrere Home-Assistant-`todo`-Listen, die als Einkaufslisten
+genutzt werden sollen. Alle importierten Alexa-Konten werden gegen alle
+ausgewaehlten Listen synchronisiert.
 
 ### Alexa Media Player
 
@@ -30,7 +30,7 @@ Beim Klick auf **Sessions uebernehmen** passiert Folgendes:
 - Daraus werden Amazon-Session-Cookies extrahiert.
 - Pro Session wird ein Amazon-Konto angelegt.
 - Die aktuell importierte Kontenliste wird durch diese Auswahl ersetzt.
-- Die Ziel-Liste und Domain werden mitgespeichert.
+- Die Ziel-Listen und Domain werden mitgespeichert.
 
 Einzelne importierte Konten koennen danach in der Weboberflaeche entfernt
 werden.
@@ -46,10 +46,10 @@ Der Statusbereich zeigt:
 
 ## Synchronisationslogik
 
-- Neue Alexa-Eintraege werden in die Ziel-Liste geschrieben.
+- Neue Alexa-Eintraege werden in alle Ziel-Listen geschrieben.
 - Neue Ziel-Listen-Eintraege werden in alle aktiven Alexa-Listen geschrieben.
 - Erledigte Ziel-Listen-Eintraege werden aus den Alexa-Listen entfernt.
-- Sync-Metadaten werden pro Amazon-Konto gespeichert.
+- Sync-Metadaten werden pro Amazon-Konto und Ziel-Liste gespeichert.
 
 ## Optionen
 
@@ -57,10 +57,11 @@ Der Statusbereich zeigt:
 | --- | --- |
 | `amazon_domain` | Amazon-Domain fuer neue Imports, z.B. `amazon.de`. |
 | `amazon_accounts` | Aus Alexa Media Player importierte Amazon-Konten. |
-| `ha_list` | Ziel-Liste als Home-Assistant-`todo`-Entity. |
+| `ha_list` | Legacy-Ziel-Liste als Home-Assistant-`todo`-Entity. |
+| `ha_lists` | Ziel-Listen als Home-Assistant-`todo`-Entities. |
 | `interval_seconds` | Sync-Intervall in Sekunden. |
-| `sync_completed` | Erledigte Eintraege zwischen Ziel-Liste und Alexa abgleichen. |
-| `remove_completed` | Erledigte Eintraege nach erfolgreichem Sync aus der Ziel-Liste entfernen. |
+| `sync_completed` | Erledigte Eintraege zwischen Ziel-Listen und Alexa abgleichen. |
+| `remove_completed` | Erledigte Eintraege nach erfolgreichem Sync aus den Ziel-Listen entfernen. |
 | `log_level` | Log-Level des Add-ons. |
 
 ## Sicherheit

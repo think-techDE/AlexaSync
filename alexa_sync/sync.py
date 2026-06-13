@@ -82,6 +82,22 @@ def get_internal_account_state(state: dict[str, Any], account_id: str) -> dict[s
     return account_states[safe_id]
 
 
+def get_internal_target_state(
+    account_state: dict[str, Any],
+    ha_entity: str,
+    *,
+    migrate_legacy: bool = False,
+) -> dict[str, Any]:
+    """Return per-target sync state, migrating the legacy account item state if needed."""
+    target_states = account_state.setdefault("targets", {})
+    if ha_entity not in target_states:
+        target_states[ha_entity] = {"items": {}}
+        if migrate_legacy and isinstance(account_state.get("items"), dict):
+            target_states[ha_entity]["items"] = account_state["items"]
+            account_state.pop("items", None)
+    return target_states[ha_entity]
+
+
 def sync_account_with_alexa_client(
     alexa: Any,
     client: HomeAssistantClient,
@@ -90,27 +106,37 @@ def sync_account_with_alexa_client(
     account_state: dict[str, Any],
     account_settings: dict[str, Any],
 ) -> int:
-    """Synchronize one configured Amazon account with an Alexa client."""
+    """Synchronize one configured Amazon account with all configured HA targets."""
     if not alexa.is_authenticated():
         detail = getattr(alexa, "last_auth_error", None)
         if detail:
             raise RuntimeError(f"Amazon-Session ist nicht authentifiziert. HTTP-Details: {detail}")
         raise RuntimeError("Amazon-Session ist nicht authentifiziert.")
-    return sync_alexa_items_with_ha(
-        alexa,
-        client,
-        settings["ha_list"],
-        account_settings,
-        account_state,
-        alexa_label=f"Alexa-Liste {account['name']}",
-        save_after=False,
-    )
+
+    writes = 0
+    targets = settings.get("ha_lists") or ([settings["ha_list"]] if settings.get("ha_list") else [])
+    for target_index, ha_entity in enumerate(targets):
+        target_state = get_internal_target_state(
+            account_state,
+            ha_entity,
+            migrate_legacy=target_index == 0,
+        )
+        writes += sync_alexa_items_with_ha(
+            alexa,
+            client,
+            ha_entity,
+            account_settings,
+            target_state,
+            alexa_label=f"Alexa-Liste {account['name']}",
+            save_after=False,
+        )
+    return writes
 
 
 def sync_internal_alexa_once(
     client: HomeAssistantClient, settings: dict[str, Any], state: dict[str, Any]
 ) -> int:
-    """Synchronize one or more Alexa accounts with one HA list."""
+    """Synchronize one or more Alexa accounts with configured HA lists."""
     writes = 0
     errors: list[str] = []
     account_settings = dict(settings)
@@ -160,9 +186,10 @@ def sync_internal_alexa_once(
         raise RuntimeError("Sync teilweise fehlgeschlagen: " + "; ".join(errors))
 
     if settings["remove_completed"]:
-        LOGGER.info("Removing completed items from %s", settings["ha_list"])
-        client.remove_completed_items(settings["ha_list"])
-        writes += 1
+        for ha_entity in settings.get("ha_lists") or ([settings["ha_list"]] if settings.get("ha_list") else []):
+            LOGGER.info("Removing completed items from %s", ha_entity)
+            client.remove_completed_items(ha_entity)
+            writes += 1
 
     return writes
 

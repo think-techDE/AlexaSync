@@ -1,17 +1,17 @@
 # Alexa Sync
 
-[![Version](https://img.shields.io/badge/version-0.9.8-blue.svg)](alexa_sync/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.9.17-blue.svg)](alexa_sync/CHANGELOG.md)
 [![Architektur](https://img.shields.io/badge/arch-amd64%20%7C%20aarch64-lightgrey.svg)](alexa_sync/build.yaml)
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-Add--on-41BDF5.svg?logo=home-assistant)](https://www.home-assistant.io/addons/)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-thinktech-FFDD00?logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/thinktech)
 
 🇩🇪 [Deutsch](README.de.md) | 🇬🇧 English
 
-Home Assistant add-on repository for synchronizing Alexa shopping lists with a Home Assistant `todo` list (e.g. Bring).
+Home Assistant add-on repository for synchronizing Alexa shopping lists with one or more Home Assistant `todo` lists (e.g. Bring).
 
 ```
 Alexa list ──┐
-             ├──► Alexa Sync ──► HA todo list (e.g. Bring)
+             ├──► Alexa Sync ──► HA todo lists (e.g. Bring)
 Alexa list ──┘        ▲
                        │ session cookies
                  Alexa Media Player
@@ -29,6 +29,7 @@ Alexa Sync reuses existing sessions from [Alexa Media Player](https://github.com
 | HA → Alexa | Write new HA items to all active Alexa lists |
 | HA → Alexa | Remove completed HA items from Alexa lists |
 | Multi-account | Sync multiple Amazon accounts in parallel |
+| Multi-target | Sync multiple Home Assistant `todo` lists |
 
 Alexa Media Player sessions are detected automatically on start and registered as Amazon accounts.
 
@@ -38,7 +39,7 @@ Alexa Media Player sessions are detected automatically on start and registered a
 
 - [ ] Home Assistant with add-on support
 - [ ] [Alexa Media Player](https://github.com/alandtse/alexa_media_player) configured with a valid Amazon session
-- [ ] An existing Home Assistant `todo` list (e.g. Bring)
+- [ ] One or more existing Home Assistant `todo` lists (e.g. Bring)
 - [ ] Architecture `amd64` or `aarch64`
 
 ---
@@ -55,7 +56,7 @@ Alexa Media Player sessions are detected automatically on start and registered a
 
 4. Find and install **Alexa Sync**.
 5. Start the add-on and open the **web UI**.
-6. Select the Amazon domain (e.g. `amazon.de`) and the target list.
+6. Select the Amazon domain (e.g. `amazon.de`) and one or more target lists.
 7. Click **Import Sessions**.
 
 > Re-importing replaces the current account list with the new selection. Accounts you no longer need can also be removed individually in the web UI.
@@ -69,7 +70,8 @@ The web UI is the recommended way. All options can also be set via YAML:
 | Option | Default | Description |
 |---|---|---|
 | `amazon_domain` | `amazon.de` | Amazon domain of the account |
-| `ha_list` | _(empty)_ | Entity ID of the target `todo` list |
+| `ha_list` | _(empty)_ | Legacy entity ID of the first target `todo` list |
+| `ha_lists` | `[]` | Entity IDs of all target `todo` lists |
 | `interval_seconds` | `150` | Sync interval in seconds |
 | `sync_completed` | `true` | Import completed Alexa items into HA |
 | `remove_completed` | `false` | Remove completed HA items from Alexa |
@@ -78,6 +80,9 @@ The web UI is the recommended way. All options can also be set via YAML:
 ```yaml
 amazon_domain: amazon.de
 ha_list: todo.shopping_list
+ha_lists:
+  - todo.shopping_list
+  - todo.hardware_store
 interval_seconds: 150
 sync_completed: true
 remove_completed: false

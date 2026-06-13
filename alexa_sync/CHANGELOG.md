@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.17
+
+- Mehrere Home-Assistant-`todo`-Listen koennen jetzt als Ziele ausgewaehlt werden.
+- Der Sync-State wird pro Amazon-Konto und pro Ziel-Liste getrennt gespeichert.
+- Bestehende Konfigurationen mit `ha_list` werden automatisch als erstes Ziel in `ha_lists` uebernommen.
+
 ## 0.9.16
 
 - Bereits bekannte erledigte Home-Assistant-Eintraege loesen keine nachtraegliche Alexa-Entfernung mehr aus.

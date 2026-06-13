@@ -2,12 +2,13 @@
 
 ## Goal
 
-Alexa Sync connects Alexa shopping lists with a Home Assistant `todo` list.
+Alexa Sync connects Alexa shopping lists with one or more Home Assistant
+`todo` lists.
 The intended workflow is intentionally short:
 
 1. Alexa Media Player provides the Amazon session.
 2. Alexa Sync imports that session.
-3. Alexa Sync synchronizes the Alexa shopping lists with the target list.
+3. Alexa Sync synchronizes the Alexa shopping lists with the target lists.
 
 ## Requirements
 
@@ -15,7 +16,7 @@ The intended workflow is intentionally short:
 | --- | --- |
 | Home Assistant with add-ons | Alexa Sync runs as a Home Assistant add-on. |
 | Alexa Media Player | Provides the Amazon session cookies. |
-| Home Assistant `todo` list | Synchronization target, e.g. Bring. |
+| Home Assistant `todo` list | Synchronization target, e.g. Bring. Multiple targets are supported. |
 | Architecture `amd64` or `aarch64` | Chromium is stably available on these platforms. |
 
 ## Installation
@@ -34,7 +35,7 @@ The intended workflow is intentionally short:
 
 ## Setup
 
-1. Under **Target**, select the Bring / Home Assistant list.
+1. Under **Targets**, select one or more Bring / Home Assistant lists.
 2. Enter the correct Amazon domain, e.g. `amazon.de`.
 3. Under **Alexa Media Player**, leave the desired sessions checked.
 4. Click **Import Sessions**.
@@ -65,14 +66,16 @@ The Home Assistant configuration is mounted read-only in the add-on. Alexa Sync 
 
 ## Synchronization
 
-Multiple Amazon accounts can be synchronized against the same target list.
+Multiple Amazon accounts and multiple Home Assistant target lists can be
+synchronized. All selected target lists are matched against the same Alexa
+shopping list.
 
 | Situation | Behaviour |
 | --- | --- |
-| New item in Alexa | Written to the target list. |
-| New item in the target list | Written to all active Alexa lists. |
+| New item in Alexa | Written to all target lists. |
+| New item in a target list | Written to all active Alexa lists. |
 | Item completed in the target list | Removed from all Alexa lists. |
-| Item disappears from Alexa | Marked as completed in the target list. |
+| Item disappears from Alexa | Marked as completed in the target lists. |
 
 ## YAML Default Values
 
@@ -81,6 +84,9 @@ The web UI is the preferred way. These options can be set as initial values:
 ```yaml
 amazon_domain: amazon.de
 ha_list: todo.shopping_list
+ha_lists:
+  - todo.shopping_list
+  - todo.hardware_store
 interval_seconds: 150
 sync_completed: true
 remove_completed: false

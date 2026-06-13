@@ -56,6 +56,25 @@ class UpdatingHomeAssistant(FakeHomeAssistant):
         self.status_updates.append((item_uid, status))
 
 
+class RecordingHomeAssistant:
+    def __init__(self, items_by_entity: dict[str, list[TodoItem]]) -> None:
+        self.items_by_entity = items_by_entity
+        self.added: list[tuple[str, str]] = []
+        self.removed_completed: list[str] = []
+
+    def get_items(self, entity_id: str) -> list[TodoItem]:
+        return self.items_by_entity.get(entity_id, [])
+
+    def add_item(self, entity_id: str, item: TodoItem) -> None:
+        self.added.append((entity_id, item.summary))
+
+    def update_status(self, entity_id: str, item_uid: str, status: str) -> None:
+        raise AssertionError(f"Unexpected HA status update in {entity_id}: {item_uid} -> {status}")
+
+    def remove_completed_items(self, entity_id: str) -> None:
+        self.removed_completed.append(entity_id)
+
+
 class SyncCompletedRemovalTests(unittest.TestCase):
     def test_completed_alexa_items_are_removed_in_one_batch(self) -> None:
         alexa = FakeAlexa(
@@ -271,6 +290,14 @@ class FailingChromiumAlexa:
         raise AssertionError("Chromium should not be constructed when HTTP sync succeeds")
 
 
+class ContextAlexaWithItems(ContextAlexa):
+    items_template: list[TodoItem] = []
+
+    def __init__(self, _domain: str, _cookie_path: object) -> None:
+        super().__init__(_domain, _cookie_path)
+        self.items = list(type(self).items_template)
+
+
 class SyncClientSelectionTests(unittest.TestCase):
     def test_sync_uses_http_client_without_starting_chromium(self) -> None:
         ContextAlexa.opened = 0
@@ -298,6 +325,93 @@ class SyncClientSelectionTests(unittest.TestCase):
 
         self.assertEqual(writes, 0)
         self.assertEqual(ContextAlexa.opened, 1)
+
+    def test_sync_writes_alexa_items_to_all_configured_targets(self) -> None:
+        ContextAlexaWithItems.opened = 0
+        ContextAlexaWithItems.items_template = [
+            TodoItem(uid="a-milk", summary="Milk", status=STATUS_NEEDS_ACTION)
+        ]
+        settings = {
+            "amazon_accounts": [
+                {
+                    "id": "acc",
+                    "name": "Test",
+                    "amazon_domain": "amazon.de",
+                    "enabled": True,
+                }
+            ],
+            "ha_list": "todo.kitchen",
+            "ha_lists": ["todo.kitchen", "todo.office"],
+            "remove_completed": False,
+            "sync_completed": True,
+        }
+        state: dict[str, object] = {}
+        ha = RecordingHomeAssistant({"todo.kitchen": [], "todo.office": []})
+
+        with (
+            patch("sync.HttpAlexaClient", ContextAlexaWithItems),
+            patch("sync.InternalAlexaClient", FailingChromiumAlexa),
+            patch("sync.save_state"),
+        ):
+            writes = sync_internal_alexa_once(ha, settings, state)
+
+        self.assertEqual(writes, 2)
+        self.assertEqual(ha.added, [("todo.kitchen", "Milk"), ("todo.office", "Milk")])
+        account_state = state["amazon_accounts"]["acc"]  # type: ignore[index]
+        self.assertIn("todo.kitchen", account_state["targets"])
+        self.assertIn("todo.office", account_state["targets"])
+
+    def test_legacy_account_items_migrate_to_first_target_state(self) -> None:
+        ContextAlexaWithItems.opened = 0
+        ContextAlexaWithItems.items_template = []
+        settings = {
+            "amazon_accounts": [
+                {
+                    "id": "acc",
+                    "name": "Test",
+                    "amazon_domain": "amazon.de",
+                    "enabled": True,
+                }
+            ],
+            "ha_list": "todo.kitchen",
+            "ha_lists": ["todo.kitchen", "todo.office"],
+            "remove_completed": False,
+            "sync_completed": True,
+        }
+        state: dict[str, object] = {
+            "amazon_accounts": {
+                "acc": {
+                    "items": {
+                        "milk": {
+                            "a_uid": "a-milk",
+                            "a_status": STATUS_NEEDS_ACTION,
+                            "b_uid": "ha-milk",
+                            "b_status": STATUS_NEEDS_ACTION,
+                        }
+                    }
+                }
+            }
+        }
+        ha = RecordingHomeAssistant(
+            {
+                "todo.kitchen": [
+                    TodoItem(uid="ha-milk", summary="Milk", status=STATUS_NEEDS_ACTION)
+                ],
+                "todo.office": [],
+            }
+        )
+
+        with (
+            patch("sync.HttpAlexaClient", ContextAlexaWithItems),
+            patch("sync.InternalAlexaClient", FailingChromiumAlexa),
+            patch("sync.save_state"),
+        ):
+            writes = sync_internal_alexa_once(ha, settings, state)
+
+        self.assertEqual(writes, 0)
+        account_state = state["amazon_accounts"]["acc"]  # type: ignore[index]
+        self.assertNotIn("items", account_state)
+        self.assertIn("milk", account_state["targets"]["todo.kitchen"]["items"])
 
 
 if __name__ == "__main__":

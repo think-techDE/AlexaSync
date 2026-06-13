@@ -213,7 +213,8 @@
     }
 
     .session-list,
-    .account-list {
+    .account-list,
+    .target-list {
       display: grid;
       gap: 10px;
       margin-top: 14px;
@@ -221,6 +222,7 @@
 
     .session-row,
     .account-row,
+    .target-row,
     .empty {
       background: var(--surface-soft);
       border: 1px solid var(--border);
@@ -241,6 +243,20 @@
       display: grid;
       gap: 10px;
       grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .target-list {
+      margin-top: 0;
+      max-height: 260px;
+      overflow: auto;
+    }
+
+    .target-row {
+      align-items: center;
+      cursor: pointer;
+      display: grid;
+      gap: 12px;
+      grid-template-columns: auto minmax(0, 1fr);
     }
 
     .account-info {
@@ -434,7 +450,7 @@
     <header class="topbar">
       <div class="topbar-text">
         <h1>Alexa Sync</h1>
-        <p class="lead" data-i18n="lead">Alexa-Media-Player-Sessions für den Sync mit einer Home-Assistant-Liste verwenden.</p>
+        <p class="lead" data-i18n="lead">Alexa-Media-Player-Sessions für den Sync mit Home-Assistant-Listen verwenden.</p>
       </div>
       <div class="lang-toggle">
         <button type="button" class="lang-btn" id="lang-de" onclick="setLang('de')">DE</button>
@@ -446,13 +462,13 @@
       <form id="config-form" class="panel">
         <section class="section">
           <div class="section-head">
-            <h2 data-i18n="target_title">Ziel</h2>
-            <p data-i18n="target_desc">Diese Home-Assistant-Liste wird mit allen importierten Alexa-Einkaufslisten abgeglichen.</p>
+            <h2 data-i18n="target_title">Ziele</h2>
+            <p data-i18n="target_desc">Diese Home-Assistant-Listen werden mit allen importierten Alexa-Einkaufslisten abgeglichen.</p>
           </div>
           <div class="field-grid">
             <div class="field">
-              <label for="internal-ha-list" data-i18n="label_ha_list">Bring-/Ziel-Liste</label>
-              <select id="internal-ha-list" name="internal_ha_list"></select>
+              <label data-i18n="label_ha_list">Bring-/Ziel-Listen</label>
+              <div id="target-list" class="target-list"></div>
             </div>
             <div class="field">
               <label for="amazon-domain" data-i18n="label_amazon_domain">Amazon-Domain</label>
@@ -516,10 +532,10 @@
   <script>
     const T = {
       de: {
-        lead: "Alexa-Media-Player-Sessions für den Sync mit einer Home-Assistant-Liste verwenden.",
-        target_title: "Ziel",
-        target_desc: "Diese Home-Assistant-Liste wird mit allen importierten Alexa-Einkaufslisten abgeglichen.",
-        label_ha_list: "Bring-/Ziel-Liste",
+        lead: "Alexa-Media-Player-Sessions für den Sync mit Home-Assistant-Listen verwenden.",
+        target_title: "Ziele",
+        target_desc: "Diese Home-Assistant-Listen werden mit allen importierten Alexa-Einkaufslisten abgeglichen.",
+        label_ha_list: "Bring-/Ziel-Listen",
         label_amazon_domain: "Amazon-Domain",
         amp_title: "Alexa Media Player",
         amp_desc: "Gefundene Sessions werden als Amazon-Zugang für den Sync übernommen.",
@@ -533,6 +549,7 @@
         status_error_label: "Letzter Fehler",
         btn_sync_now: "Jetzt synchronisieren",
         please_select: "Bitte auswählen",
+        no_todo_entities: "Keine Home-Assistant-todo-Liste gefunden.",
         pill_active: "aktiv",
         pill_found: "gefunden",
         no_importable_session: "Keine importierbare Alexa-Media-Player-Session gefunden.",
@@ -562,10 +579,10 @@
         sync_failed: "Sync fehlgeschlagen"
       },
       en: {
-        lead: "Use Alexa Media Player sessions to sync with a Home Assistant to-do list.",
-        target_title: "Target",
-        target_desc: "This Home Assistant list is synchronized with all imported Alexa shopping lists.",
-        label_ha_list: "Target List",
+        lead: "Use Alexa Media Player sessions to sync with Home Assistant to-do lists.",
+        target_title: "Targets",
+        target_desc: "These Home Assistant lists are synchronized with all imported Alexa shopping lists.",
+        label_ha_list: "Target Lists",
         label_amazon_domain: "Amazon Domain",
         amp_title: "Alexa Media Player",
         amp_desc: "Detected sessions are imported as Amazon accounts for synchronization.",
@@ -579,6 +596,7 @@
         status_error_label: "Last Error",
         btn_sync_now: "Sync Now",
         please_select: "Please select",
+        no_todo_entities: "No Home Assistant to-do list found.",
         pill_active: "active",
         pill_found: "found",
         no_importable_session: "No importable Alexa Media Player session found.",
@@ -617,7 +635,7 @@
     let suggestedList = "";
     let lastStatus = {};
 
-    const internalHaList = document.getElementById("internal-ha-list");
+    const targetList = document.getElementById("target-list");
     const amazonDomain = document.getElementById("amazon-domain");
     const message = document.getElementById("message");
     const accountList = document.getElementById("account-list");
@@ -645,10 +663,15 @@
     }
 
     function setLang(lang) {
+      const selectedTargets = selectedTargetLists();
+      if (targetList.children.length) {
+        currentSettings.ha_lists = selectedTargets;
+        currentSettings.ha_list = selectedTargets[0] || "";
+      }
       currentLang = lang;
       localStorage.setItem("lang", lang);
       applyLang();
-      fillSelect(internalHaList, todoEntities, currentSettings.ha_list || suggestedList);
+      renderTargetLists();
       renderAlexaMediaSessions();
       renderAccounts(currentSettings.amazon_accounts || []);
       renderStatus(lastStatus);
@@ -659,21 +682,6 @@
       message.className = `message ${type}`.trim();
     }
 
-    function option(value, label) {
-      const opt = document.createElement("option");
-      opt.value = value;
-      opt.textContent = label;
-      return opt;
-    }
-
-    function fillSelect(select, entities, selected) {
-      select.replaceChildren(option("", t("please_select")));
-      for (const entity of entities || []) {
-        select.appendChild(option(entity.entity_id, `${entity.name} (${entity.entity_id})`));
-      }
-      select.value = selected || "";
-    }
-
     function escapeHtml(value) {
       return String(value ?? "").replace(/[&<>"']/g, (char) => ({
         "&": "&amp;",
@@ -682,6 +690,44 @@
         '"': "&quot;",
         "'": "&#39;"
       }[char]));
+    }
+
+    function configuredTargetLists() {
+      const configured = Array.isArray(currentSettings.ha_lists)
+        ? currentSettings.ha_lists
+        : [];
+      if (configured.length) return configured;
+      if (currentSettings.ha_list) return [currentSettings.ha_list];
+      return suggestedList ? [suggestedList] : [];
+    }
+
+    function renderTargetLists() {
+      targetList.replaceChildren();
+      if (!todoEntities.length) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = t("no_todo_entities");
+        targetList.appendChild(empty);
+        return;
+      }
+
+      const selected = new Set(configuredTargetLists());
+      for (const entity of todoEntities) {
+        const row = document.createElement("label");
+        row.className = "target-row";
+        row.innerHTML = `
+          <input type="checkbox" value="${escapeHtml(entity.entity_id)}" ${selected.has(entity.entity_id) ? "checked" : ""}>
+          <span class="account-info">
+            <strong>${escapeHtml(entity.name || entity.entity_id)}</strong>
+            <span class="status-text">${escapeHtml(entity.entity_id)}</span>
+          </span>
+        `;
+        targetList.appendChild(row);
+      }
+    }
+
+    function selectedTargetLists() {
+      return [...targetList.querySelectorAll('input[type="checkbox"]:checked')].map((input) => input.value);
     }
 
     function statusForAccount(accountId) {
@@ -786,7 +832,7 @@
       alexaMediaSessions = data.alexa_media_sessions || [];
       todoEntities = data.todo_entities || [];
 
-      fillSelect(internalHaList, todoEntities, currentSettings.ha_list || suggestedList);
+      renderTargetLists();
       amazonDomain.value = currentSettings.amazon_domain || "amazon.de";
 
       renderAlexaMediaSessions();
@@ -796,11 +842,13 @@
     }
 
     function draftSettings() {
+      const haLists = selectedTargetLists();
       return {
         mode: "internal_alexa",
         amazon_domain: amazonDomain.value || currentSettings.amazon_domain || "amazon.de",
         amazon_accounts: currentSettings.amazon_accounts || [],
-        ha_list: internalHaList.value,
+        ha_list: haLists[0] || "",
+        ha_lists: haLists,
         interval_seconds: currentSettings.interval_seconds || 150,
         sync_completed: currentSettings.sync_completed !== false,
         remove_completed: Boolean(currentSettings.remove_completed),

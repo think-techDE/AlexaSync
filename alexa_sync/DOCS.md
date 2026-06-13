@@ -2,12 +2,13 @@
 
 ## Ziel
 
-Alexa Sync verbindet Alexa-Einkaufslisten mit einer Home-Assistant-`todo`-Liste.
+Alexa Sync verbindet Alexa-Einkaufslisten mit einer oder mehreren
+Home-Assistant-`todo`-Listen.
 Der normale Weg ist bewusst kurz:
 
 1. Alexa Media Player stellt die Amazon-Session bereit.
 2. Alexa Sync uebernimmt diese Session.
-3. Alexa Sync synchronisiert die Alexa-Einkaufslisten mit der Ziel-Liste.
+3. Alexa Sync synchronisiert die Alexa-Einkaufslisten mit den Ziel-Listen.
 
 ## Voraussetzungen
 
@@ -15,7 +16,7 @@ Der normale Weg ist bewusst kurz:
 | --- | --- |
 | Home Assistant mit Add-ons | Alexa Sync laeuft als Home-Assistant-Add-on. |
 | Alexa Media Player | Liefert die Amazon-Session-Cookies. |
-| Home-Assistant-`todo`-Liste | Ziel der Synchronisation, z.B. Bring. |
+| Home-Assistant-`todo`-Liste | Ziel der Synchronisation, z.B. Bring. Mehrere Ziele sind moeglich. |
 | Architektur `amd64` oder `aarch64` | Dort ist Chromium im Add-on stabil verfuegbar. |
 
 ## Installation
@@ -34,7 +35,7 @@ Der normale Weg ist bewusst kurz:
 
 ## Einrichtung
 
-1. Bei **Ziel** die Bring-/Home-Assistant-Liste auswaehlen.
+1. Bei **Ziele** eine oder mehrere Bring-/Home-Assistant-Listen auswaehlen.
 2. Die passende Amazon-Domain eintragen, z.B. `amazon.de`.
 3. Unter **Alexa Media Player** die gewuenschten Sessions markiert lassen.
 4. **Sessions uebernehmen** klicken.
@@ -70,14 +71,16 @@ speichert nur die daraus extrahierten Cookies pro importiertem Konto unter
 
 ## Synchronisation
 
-Mehrere Amazon-Konten koennen gegen dieselbe Ziel-Liste synchronisiert werden.
+Mehrere Amazon-Konten und mehrere Home-Assistant-Ziel-Listen koennen
+synchronisiert werden. Alle ausgewaehlten Ziel-Listen werden mit derselben
+Alexa-Einkaufsliste abgeglichen.
 
 | Situation | Verhalten |
 | --- | --- |
-| Neuer Artikel in Alexa | Wird in die Ziel-Liste geschrieben. |
-| Neuer Artikel in der Ziel-Liste | Wird in alle aktiven Alexa-Listen geschrieben. |
+| Neuer Artikel in Alexa | Wird in alle Ziel-Listen geschrieben. |
+| Neuer Artikel in einer Ziel-Liste | Wird in alle aktiven Alexa-Listen geschrieben. |
 | Artikel in der Ziel-Liste erledigt | Wird aus den Alexa-Listen entfernt. |
-| Artikel verschwindet aus Alexa | Wird in der Ziel-Liste als erledigt markiert. |
+| Artikel verschwindet aus Alexa | Wird in den Ziel-Listen als erledigt markiert. |
 
 ## YAML-Startwerte
 
@@ -87,6 +90,9 @@ gesetzt werden:
 ```yaml
 amazon_domain: amazon.de
 ha_list: todo.einkaufsliste_2
+ha_lists:
+  - todo.einkaufsliste_2
+  - todo.baumarkt
 interval_seconds: 150
 sync_completed: true
 remove_completed: false

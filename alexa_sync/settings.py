@@ -25,6 +25,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "amazon_domain": "amazon.de",
     "amazon_accounts": [],
     "ha_list": "",
+    "ha_lists": [],
     "interval_seconds": 150,
     "sync_completed": True,
     "remove_completed": False,
@@ -127,6 +128,31 @@ def normalize_amazon_accounts(raw_accounts: Any, legacy_domain: str) -> list[dic
     return accounts
 
 
+def normalize_ha_lists(raw_lists: Any, legacy_ha_list: Any = "") -> list[str]:
+    """Normalize configured Home Assistant todo targets."""
+    candidates: list[Any] = []
+    if isinstance(raw_lists, list):
+        candidates.extend(raw_lists)
+    elif raw_lists:
+        candidates.append(raw_lists)
+
+    legacy = str(legacy_ha_list or "").strip()
+    if not candidates and legacy:
+        candidates.append(legacy)
+
+    targets: list[str] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        if isinstance(candidate, dict):
+            candidate = candidate.get("entity_id") or candidate.get("ha_list") or candidate.get("id")
+        entity_id = str(candidate or "").strip()
+        if not entity_id or entity_id in seen:
+            continue
+        seen.add(entity_id)
+        targets.append(entity_id)
+    return targets
+
+
 def normalize_settings(raw: dict[str, Any]) -> dict[str, Any]:
     """Normalize user settings."""
     settings = dict(DEFAULT_SETTINGS)
@@ -139,7 +165,8 @@ def normalize_settings(raw: dict[str, Any]) -> dict[str, Any]:
     )
     if settings["amazon_accounts"]:
         settings["amazon_domain"] = settings["amazon_accounts"][0]["amazon_domain"]
-    settings["ha_list"] = str(settings.get("ha_list", "")).strip()
+    settings["ha_lists"] = normalize_ha_lists(settings.get("ha_lists"), settings.get("ha_list"))
+    settings["ha_list"] = settings["ha_lists"][0] if settings["ha_lists"] else ""
     settings["interval_seconds"] = parse_int(settings.get("interval_seconds"), 150, 30, 3600)
     settings["sync_completed"] = bool(settings.get("sync_completed", True))
     settings["remove_completed"] = bool(settings.get("remove_completed", False))
@@ -172,8 +199,8 @@ def validate_settings(settings: dict[str, Any]) -> None:
     for account in enabled_amazon_accounts(settings):
         if not account["amazon_domain"]:
             raise ValueError(f"Bitte Amazon-Domain fuer {account['name']} eintragen.")
-    if not settings["ha_list"]:
-        raise ValueError("Bitte eine Home-Assistant-Liste auswaehlen.")
+    if not settings["ha_lists"]:
+        raise ValueError("Bitte mindestens eine Home-Assistant-Liste auswaehlen.")
 
 
 def is_configured(settings: dict[str, Any]) -> bool:
@@ -187,8 +214,8 @@ def get_configuration_error(settings: dict[str, Any]) -> str | None:
     accounts = enabled_amazon_accounts(settings)
     if not accounts:
         return "Bitte mindestens ein Amazon-Konto aktivieren."
-    if not settings["ha_list"]:
-        return "Bitte Bring-/Ziel-Liste auswaehlen."
+    if not settings["ha_lists"]:
+        return "Bitte mindestens eine Bring-/Ziel-Liste auswaehlen."
     missing_sessions = [
         account["name"]
         for account in accounts
