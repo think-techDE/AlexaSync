@@ -162,6 +162,69 @@ class SyncCompletedRemovalTests(unittest.TestCase):
         self.assertEqual(alexa.removed_batches, [["A"]])
         self.assertNotIn("pending_alexa_remove", state["items"]["a"])
 
+    def test_deleted_known_ha_item_is_removed_from_alexa(self) -> None:
+        alexa = FakeAlexa([TodoItem(uid="a", summary="A", status=STATUS_NEEDS_ACTION)])
+        ha = FakeHomeAssistant([])
+        settings = {"sync_completed": True, "remove_completed": False}
+        state = {
+            "items": {
+                "a": {
+                    "a_uid": "a",
+                    "a_status": STATUS_NEEDS_ACTION,
+                    "b_uid": "ha-a",
+                    "b_status": STATUS_NEEDS_ACTION,
+                }
+            }
+        }
+
+        writes = sync_alexa_items_with_ha(
+            alexa,
+            ha,
+            "todo.enaro",
+            settings,
+            state,
+            alexa_label="Alexa",
+            save_after=False,
+        )
+
+        self.assertEqual(writes, 1)
+        self.assertEqual(alexa.removed_batches, [["A"]])
+        self.assertNotIn("pending_alexa_remove", state["items"]["a"])
+
+    def test_bulk_deleted_ha_items_are_not_removed_from_alexa(self) -> None:
+        alexa = FakeAlexa(
+            [
+                TodoItem(uid=f"a-{index}", summary=f"Item {index}", status=STATUS_NEEDS_ACTION)
+                for index in range(6)
+            ]
+        )
+        ha = FakeHomeAssistant([])
+        settings = {"sync_completed": True, "remove_completed": False}
+        state = {
+            "items": {
+                f"item {index}": {
+                    "a_uid": f"a-{index}",
+                    "a_status": STATUS_NEEDS_ACTION,
+                    "b_uid": f"ha-{index}",
+                    "b_status": STATUS_NEEDS_ACTION,
+                }
+                for index in range(6)
+            }
+        }
+
+        writes = sync_alexa_items_with_ha(
+            alexa,
+            ha,
+            "todo.enaro",
+            settings,
+            state,
+            alexa_label="Alexa",
+            save_after=False,
+        )
+
+        self.assertEqual(writes, 0)
+        self.assertEqual(alexa.removed_batches, [])
+
 
 class SyncAlexaDisappearanceTests(unittest.TestCase):
     def test_missing_alexa_item_must_be_confirmed_before_completion(self) -> None:

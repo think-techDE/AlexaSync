@@ -1,6 +1,6 @@
 # Alexa Sync
 
-[![Version](https://img.shields.io/badge/version-0.9.17-blue.svg)](alexa_sync/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.9.18-blue.svg)](alexa_sync/CHANGELOG.md)
 [![Architektur](https://img.shields.io/badge/arch-amd64%20%7C%20aarch64-lightgrey.svg)](alexa_sync/build.yaml)
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-Add--on-41BDF5.svg?logo=home-assistant)](https://www.home-assistant.io/addons/)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-thinktech-FFDD00?logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/thinktech)
@@ -28,6 +28,7 @@ Alexa Sync nutzt vorhandene Sessions aus [Alexa Media Player](https://github.com
 | Alexa → HA | Neue Einträge aus Alexa-Listen importieren |
 | HA → Alexa | Neue HA-Einträge in alle aktiven Alexa-Listen schreiben |
 | HA → Alexa | Erledigte HA-Einträge aus Alexa-Listen entfernen |
+| HA → Alexa | Gelöschte bekannte HA-Einträge aus Alexa-Listen entfernen |
 | Mehrere Konten | Mehrere Amazon-Konten parallel synchronisieren |
 | Mehrere Ziele | Mehrere Home-Assistant-`todo`-Listen synchronisieren |
 

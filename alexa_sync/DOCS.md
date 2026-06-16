@@ -80,6 +80,7 @@ Alexa-Einkaufsliste abgeglichen.
 | Neuer Artikel in Alexa | Wird in alle Ziel-Listen geschrieben. |
 | Neuer Artikel in einer Ziel-Liste | Wird in alle aktiven Alexa-Listen geschrieben. |
 | Artikel in der Ziel-Liste erledigt | Wird aus den Alexa-Listen entfernt. |
+| Bekannter Artikel verschwindet aus einer Ziel-Liste | Wird als Loeschung/Erledigung behandelt und aus Alexa entfernt. |
 | Artikel verschwindet aus Alexa | Wird in den Ziel-Listen als erledigt markiert. |
 
 ## YAML-Startwerte

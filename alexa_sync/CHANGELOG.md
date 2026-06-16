@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.18
+
+- Bekannte Home-Assistant-Eintraege, die aus einer Ziel-Liste verschwinden, werden nun als Loeschung/Erledigung behandelt und aus Alexa entfernt.
+- Schutz gegen fehlerhafte Massen-Loeschungen: Wenn viele bekannte HA-Eintraege auf einmal fehlen, wird die Alexa-Liste nicht bereinigt.
+
 ## 0.9.17
 
 - Mehrere Home-Assistant-`todo`-Listen koennen jetzt als Ziele ausgewaehlt werden.

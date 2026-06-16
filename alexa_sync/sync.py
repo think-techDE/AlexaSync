@@ -19,6 +19,7 @@ from alexa_client import (
 LOGGER = logging.getLogger("alexa_sync")
 MISSING_COMPLETION_CONFIRMATIONS = 2
 MISSING_COMPLETION_BULK_LIMIT = 5
+HA_DELETION_BULK_LIMIT = 5
 
 
 def resolve_status(item_a: TodoItem, item_b: TodoItem, state: dict[str, Any]) -> str | None:
@@ -211,6 +212,7 @@ def sync_alexa_items_with_ha(
     keys = set(alexa_items) | set(ha_items) | set(stored_items)
     completed_alexa_items: list[tuple[dict[str, Any], TodoItem]] = []
     missing_completion_candidates: list[tuple[dict[str, Any], TodoItem]] = []
+    ha_deletion_candidates: list[tuple[dict[str, Any], TodoItem]] = []
     writes = 0
 
     for key in sorted(keys):
@@ -247,6 +249,23 @@ def sync_alexa_items_with_ha(
             continue
 
         if ha_item is None and alexa_item is not None:
+            if (
+                settings["sync_completed"]
+                and item_state.get("b_uid")
+                and (
+                    item_state.get("b_status") == STATUS_NEEDS_ACTION
+                    or item_state.get("pending_alexa_remove")
+                )
+            ):
+                LOGGER.info(
+                    "Detected deleted '%s' in %s; scheduling Alexa removal",
+                    alexa_item.summary,
+                    ha_entity,
+                )
+                item_state["pending_alexa_remove"] = True
+                ha_deletion_candidates.append((item_state, alexa_item))
+                remember(item_state, alexa_item, ha_item)
+                continue
             LOGGER.info("Creating '%s' in %s", alexa_item.summary, ha_entity)
             client.add_item(ha_entity, alexa_item)
             writes += 1
@@ -267,6 +286,17 @@ def sync_alexa_items_with_ha(
                 LOGGER.debug("Skipping old completed '%s' for Alexa removal", ha_item.summary)
 
         remember(item_state, alexa_item, ha_item)
+
+    if len(ha_deletion_candidates) > HA_DELETION_BULK_LIMIT:
+        LOGGER.warning(
+            "Skipping %s Home Assistant deletions for %s because the list read looks incomplete",
+            len(ha_deletion_candidates),
+            ha_entity,
+        )
+        for item_state, _alexa_item in ha_deletion_candidates:
+            item_state.pop("pending_alexa_remove", None)
+    else:
+        completed_alexa_items.extend(ha_deletion_candidates)
 
     if len(missing_completion_candidates) > MISSING_COMPLETION_BULK_LIMIT:
         LOGGER.warning(

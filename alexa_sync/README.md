@@ -49,6 +49,7 @@ Der Statusbereich zeigt:
 - Neue Alexa-Eintraege werden in alle Ziel-Listen geschrieben.
 - Neue Ziel-Listen-Eintraege werden in alle aktiven Alexa-Listen geschrieben.
 - Erledigte Ziel-Listen-Eintraege werden aus den Alexa-Listen entfernt.
+- Bekannte verschwundene Ziel-Listen-Eintraege werden als Loeschung/Erledigung behandelt.
 - Sync-Metadaten werden pro Amazon-Konto und Ziel-Liste gespeichert.
 
 ## Optionen
