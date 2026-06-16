@@ -67,13 +67,15 @@ The Home Assistant configuration is mounted read-only in the add-on. Alexa Sync 
 ## Synchronization
 
 Multiple Amazon accounts and multiple Home Assistant target lists can be
-synchronized. All selected target lists are matched against the same Alexa
-shopping list.
+synchronized. All selected target lists are mirrored directly with each other
+and matched against the same Alexa shopping list.
 
 | Situation | Behaviour |
 | --- | --- |
 | New item in Alexa | Written to all target lists. |
+| New item in a target list | Written to the other target lists. |
 | New item in a target list | Written to all active Alexa lists. |
+| Item completed in a target list | Marked as completed in the other target lists. |
 | Item completed in the target list | Removed from all Alexa lists. |
 | Known item disappears from a target list | Treated as deletion/completion and removed from Alexa. |
 | Item disappears from Alexa | Marked as completed in the target lists. |

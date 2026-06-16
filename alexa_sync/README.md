@@ -47,10 +47,12 @@ Der Statusbereich zeigt:
 ## Synchronisationslogik
 
 - Neue Alexa-Eintraege werden in alle Ziel-Listen geschrieben.
+- Neue Eintraege in einer Ziel-Liste werden in die anderen Ziel-Listen geschrieben.
 - Neue Ziel-Listen-Eintraege werden in alle aktiven Alexa-Listen geschrieben.
+- Erledigte Ziel-Listen-Eintraege werden in den anderen Ziel-Listen als erledigt markiert.
 - Erledigte Ziel-Listen-Eintraege werden aus den Alexa-Listen entfernt.
 - Bekannte verschwundene Ziel-Listen-Eintraege werden als Loeschung/Erledigung behandelt.
-- Sync-Metadaten werden pro Amazon-Konto und Ziel-Liste gespeichert.
+- Sync-Metadaten werden pro Amazon-Konto und pro HA-Ziel-Liste gespeichert.
 
 ## Optionen
 

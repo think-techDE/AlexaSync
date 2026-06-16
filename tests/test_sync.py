@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "alexa_sync"))
 
 from ha_client import TodoItem  # noqa: E402
 from settings import STATUS_COMPLETED, STATUS_NEEDS_ACTION  # noqa: E402
-from sync import sync_alexa_items_with_ha, sync_internal_alexa_once  # noqa: E402
+from sync import sync_alexa_items_with_ha, sync_ha_targets, sync_internal_alexa_once  # noqa: E402
 
 
 class FakeAlexa:
@@ -61,18 +61,54 @@ class RecordingHomeAssistant:
         self.items_by_entity = items_by_entity
         self.added: list[tuple[str, str]] = []
         self.removed_completed: list[str] = []
+        self.status_updates: list[tuple[str, str, str]] = []
 
     def get_items(self, entity_id: str) -> list[TodoItem]:
         return self.items_by_entity.get(entity_id, [])
 
     def add_item(self, entity_id: str, item: TodoItem) -> None:
         self.added.append((entity_id, item.summary))
+        self.items_by_entity.setdefault(entity_id, []).append(
+            TodoItem(
+                uid=item.summary,
+                summary=item.summary,
+                status=STATUS_NEEDS_ACTION,
+                description=item.description,
+            )
+        )
 
     def update_status(self, entity_id: str, item_uid: str, status: str) -> None:
-        raise AssertionError(f"Unexpected HA status update in {entity_id}: {item_uid} -> {status}")
+        self.status_updates.append((entity_id, item_uid, status))
+        for item in self.items_by_entity.get(entity_id, []):
+            if item.uid == item_uid:
+                item.status = status
+                return
 
     def remove_completed_items(self, entity_id: str) -> None:
         self.removed_completed.append(entity_id)
+
+
+def ha_targets_state(
+    items_by_entity: dict[str, list[TodoItem]],
+) -> dict[str, object]:
+    return {
+        "ha_targets": {
+            "initialized": True,
+            "targets": {
+                entity_id: {
+                    "items": {
+                        item.summary.casefold(): {
+                            "uid": item.uid,
+                            "status": item.status,
+                            "summary": item.summary,
+                        }
+                        for item in items
+                    }
+                }
+                for entity_id, items in items_by_entity.items()
+            },
+        }
+    }
 
 
 class SyncCompletedRemovalTests(unittest.TestCase):
@@ -224,6 +260,143 @@ class SyncCompletedRemovalTests(unittest.TestCase):
 
         self.assertEqual(writes, 0)
         self.assertEqual(alexa.removed_batches, [])
+
+
+class SyncHomeAssistantTargetsTests(unittest.TestCase):
+    def test_completed_item_in_bring_is_completed_in_enaro(self) -> None:
+        previous = {
+            "todo.bring": [TodoItem(uid="bring-a", summary="A", status=STATUS_NEEDS_ACTION)],
+            "todo.enaro": [TodoItem(uid="enaro-a", summary="A", status=STATUS_NEEDS_ACTION)],
+        }
+        state = ha_targets_state(previous)
+        ha = RecordingHomeAssistant(
+            {
+                "todo.bring": [TodoItem(uid="bring-a", summary="A", status=STATUS_COMPLETED)],
+                "todo.enaro": [TodoItem(uid="enaro-a", summary="A", status=STATUS_NEEDS_ACTION)],
+            }
+        )
+
+        writes = sync_ha_targets(
+            ha,
+            {
+                "ha_lists": ["todo.bring", "todo.enaro"],
+                "sync_completed": True,
+            },
+            state,
+        )
+
+        self.assertEqual(writes, 1)
+        self.assertEqual(ha.status_updates, [("todo.enaro", "enaro-a", STATUS_COMPLETED)])
+        self.assertEqual(ha.added, [])
+
+    def test_deleted_item_in_bring_is_completed_in_enaro(self) -> None:
+        previous = {
+            "todo.bring": [TodoItem(uid="bring-a", summary="A", status=STATUS_NEEDS_ACTION)],
+            "todo.enaro": [TodoItem(uid="enaro-a", summary="A", status=STATUS_NEEDS_ACTION)],
+        }
+        state = ha_targets_state(previous)
+        ha = RecordingHomeAssistant(
+            {
+                "todo.bring": [],
+                "todo.enaro": [TodoItem(uid="enaro-a", summary="A", status=STATUS_NEEDS_ACTION)],
+            }
+        )
+
+        writes = sync_ha_targets(
+            ha,
+            {
+                "ha_lists": ["todo.bring", "todo.enaro"],
+                "sync_completed": True,
+            },
+            state,
+        )
+
+        self.assertEqual(writes, 1)
+        self.assertEqual(ha.status_updates, [("todo.enaro", "enaro-a", STATUS_COMPLETED)])
+        self.assertEqual(ha.added, [])
+
+    def test_new_item_in_enaro_is_created_in_bring(self) -> None:
+        state = ha_targets_state({"todo.bring": [], "todo.enaro": []})
+        ha = RecordingHomeAssistant(
+            {
+                "todo.bring": [],
+                "todo.enaro": [TodoItem(uid="enaro-a", summary="A", status=STATUS_NEEDS_ACTION)],
+            }
+        )
+
+        writes = sync_ha_targets(
+            ha,
+            {
+                "ha_lists": ["todo.bring", "todo.enaro"],
+                "sync_completed": True,
+            },
+            state,
+        )
+
+        self.assertEqual(writes, 1)
+        self.assertEqual(ha.added, [("todo.bring", "A")])
+        self.assertEqual(ha.status_updates, [])
+
+    def test_completion_wins_over_recreating_deleted_item(self) -> None:
+        previous = {
+            "todo.bring": [TodoItem(uid="bring-a", summary="A", status=STATUS_NEEDS_ACTION)],
+            "todo.enaro": [TodoItem(uid="enaro-a", summary="A", status=STATUS_NEEDS_ACTION)],
+        }
+        state = ha_targets_state(previous)
+        ha = RecordingHomeAssistant(
+            {
+                "todo.bring": [],
+                "todo.enaro": [TodoItem(uid="enaro-a", summary="A", status=STATUS_NEEDS_ACTION)],
+            }
+        )
+
+        writes = sync_ha_targets(
+            ha,
+            {
+                "ha_lists": ["todo.bring", "todo.enaro"],
+                "sync_completed": True,
+            },
+            state,
+        )
+
+        self.assertEqual(writes, 1)
+        self.assertEqual(ha.status_updates, [("todo.enaro", "enaro-a", STATUS_COMPLETED)])
+        self.assertEqual(ha.added, [])
+
+    def test_bulk_missing_target_does_not_complete_other_targets(self) -> None:
+        previous = {
+            "todo.bring": [
+                TodoItem(uid=f"bring-{index}", summary=f"Item {index}", status=STATUS_NEEDS_ACTION)
+                for index in range(6)
+            ],
+            "todo.enaro": [
+                TodoItem(uid=f"enaro-{index}", summary=f"Item {index}", status=STATUS_NEEDS_ACTION)
+                for index in range(6)
+            ],
+        }
+        state = ha_targets_state(previous)
+        ha = RecordingHomeAssistant(
+            {
+                "todo.bring": [],
+                "todo.enaro": [
+                    TodoItem(uid=f"enaro-{index}", summary=f"Item {index}", status=STATUS_NEEDS_ACTION)
+                    for index in range(6)
+                ],
+            }
+        )
+
+        writes = sync_ha_targets(
+            ha,
+            {
+                "ha_lists": ["todo.bring", "todo.enaro"],
+                "sync_completed": True,
+            },
+            state,
+        )
+
+        self.assertEqual(writes, 0)
+        self.assertEqual(ha.status_updates, [])
+        self.assertEqual(ha.added, [])
 
 
 class SyncAlexaDisappearanceTests(unittest.TestCase):

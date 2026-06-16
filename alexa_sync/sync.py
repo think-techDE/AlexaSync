@@ -22,6 +22,12 @@ MISSING_COMPLETION_BULK_LIMIT = 5
 HA_DELETION_BULK_LIMIT = 5
 
 
+def configured_ha_targets(settings: dict[str, Any]) -> list[str]:
+    """Return configured Home Assistant target lists."""
+    targets = settings.get("ha_lists") or ([settings.get("ha_list")] if settings.get("ha_list") else [])
+    return [str(target).strip() for target in targets if str(target).strip()]
+
+
 def resolve_status(item_a: TodoItem, item_b: TodoItem, state: dict[str, Any]) -> str | None:
     """Resolve which status should win for an item present in both lists."""
     if item_a.status == item_b.status:
@@ -99,6 +105,205 @@ def get_internal_target_state(
     return target_states[ha_entity]
 
 
+def get_ha_targets_state(state: dict[str, Any], targets: list[str]) -> dict[str, Any]:
+    """Return HA target sync state, migrating known per-account target metadata."""
+    ha_state = state.get("ha_targets")
+    if not isinstance(ha_state, dict):
+        ha_state = {"targets": {}, "initialized": False}
+        state["ha_targets"] = ha_state
+
+    target_states = ha_state.setdefault("targets", {})
+    for target in targets:
+        target_states.setdefault(target, {"items": {}})
+
+    if ha_state.get("initialized"):
+        return ha_state
+
+    migrated = False
+    for account_state in (state.get("amazon_accounts") or {}).values():
+        if not isinstance(account_state, dict):
+            continue
+        account_targets = account_state.get("targets") or {}
+        if not isinstance(account_targets, dict):
+            continue
+        for target in targets:
+            source_target = account_targets.get(target) or {}
+            source_items = source_target.get("items") or {}
+            if not isinstance(source_items, dict):
+                continue
+            target_items = target_states.setdefault(target, {"items": {}}).setdefault("items", {})
+            for key, item_state in source_items.items():
+                if not isinstance(item_state, dict) or key in target_items:
+                    continue
+                uid = item_state.get("b_uid")
+                status = item_state.get("b_status")
+                summary = item_state.get("summary")
+                if not (uid or status or summary):
+                    continue
+                target_items[key] = {
+                    "uid": uid,
+                    "status": status or STATUS_NEEDS_ACTION,
+                    "summary": summary or key,
+                    "last_seen": item_state.get("last_seen") or time.time(),
+                }
+                migrated = True
+
+    if migrated:
+        ha_state["initialized"] = True
+    return ha_state
+
+
+def remember_ha_target_item(item_state: dict[str, Any], item: TodoItem) -> None:
+    """Persist HA target item metadata."""
+    item_state["uid"] = item.uid
+    item_state["status"] = item.status
+    item_state["summary"] = item.summary
+    item_state["last_seen"] = time.time()
+
+
+def sync_ha_targets(
+    client: HomeAssistantClient,
+    settings: dict[str, Any],
+    state: dict[str, Any],
+) -> int:
+    """Synchronize configured Home Assistant target lists with each other."""
+    targets = configured_ha_targets(settings)
+    if len(targets) < 2:
+        return 0
+
+    ha_state = get_ha_targets_state(state, targets)
+    target_states = ha_state.setdefault("targets", {})
+    target_items = {target: index_items(client.get_items(target)) for target in targets}
+
+    if not ha_state.get("initialized"):
+        for target, items in target_items.items():
+            stored_items = target_states.setdefault(target, {"items": {}}).setdefault("items", {})
+            for key, item in items.items():
+                remember_ha_target_item(stored_items.setdefault(key, {}), item)
+        ha_state["initialized"] = True
+        ha_state["updated_at"] = time.time()
+        return 0
+
+    unreliable_targets: set[str] = set()
+    for target in targets:
+        stored_items = target_states.setdefault(target, {"items": {}}).setdefault("items", {})
+        missing_known_active = [
+            key
+            for key, item_state in stored_items.items()
+            if key not in target_items[target]
+            and item_state.get("uid")
+            and item_state.get("status") == STATUS_NEEDS_ACTION
+        ]
+        if len(missing_known_active) > HA_DELETION_BULK_LIMIT:
+            unreliable_targets.add(target)
+            LOGGER.warning(
+                "Skipping Home Assistant target sync for %s because %s known items are missing",
+                target,
+                len(missing_known_active),
+            )
+
+    keys: set[str] = set()
+    for target in targets:
+        keys.update(target_items[target])
+        keys.update(target_states.setdefault(target, {"items": {}}).setdefault("items", {}))
+
+    completed_keys: set[str] = set()
+    writes = 0
+
+    for key in sorted(keys):
+        current_by_target = {target: target_items[target].get(key) for target in targets}
+        if not any(current_by_target.values()):
+            for target in targets:
+                if target not in unreliable_targets:
+                    target_states[target]["items"].pop(key, None)
+            continue
+
+        completion_source = False
+        if settings.get("sync_completed", True):
+            completion_source = any(
+                item is not None
+                and item.status == STATUS_COMPLETED
+                and target not in unreliable_targets
+                for target, item in current_by_target.items()
+            )
+            if not completion_source:
+                for target in targets:
+                    if target in unreliable_targets or current_by_target[target] is not None:
+                        continue
+                    item_state = target_states[target]["items"].get(key) or {}
+                    if (
+                        item_state.get("uid")
+                        and item_state.get("status") == STATUS_NEEDS_ACTION
+                    ):
+                        completion_source = True
+                        break
+
+        if completion_source:
+            completed_keys.add(key)
+            for target, item in current_by_target.items():
+                if (
+                    target in unreliable_targets
+                    or item is None
+                    or item.status == STATUS_COMPLETED
+                ):
+                    continue
+                LOGGER.info(
+                    "Marking '%s' in %s as completed because another target list completed it",
+                    item.summary,
+                    target,
+                )
+                client.update_status(target, item.uid, STATUS_COMPLETED)
+                item.status = STATUS_COMPLETED
+                writes += 1
+            continue
+
+        active_sources = [
+            (target, item)
+            for target, item in current_by_target.items()
+            if item is not None and item.status == STATUS_NEEDS_ACTION
+        ]
+        if not active_sources:
+            continue
+
+        source_target, source_item = active_sources[0]
+        for target in targets:
+            if target in unreliable_targets or current_by_target[target] is not None:
+                continue
+            LOGGER.info(
+                "Creating '%s' in %s because it exists in %s",
+                source_item.summary,
+                target,
+                source_target,
+            )
+            client.add_item(target, source_item)
+            added_item = TodoItem(
+                uid=source_item.summary,
+                summary=source_item.summary,
+                status=STATUS_NEEDS_ACTION,
+                description=source_item.description,
+            )
+            target_items[target][key] = added_item
+            current_by_target[target] = added_item
+            writes += 1
+
+    for target in targets:
+        if target in unreliable_targets:
+            continue
+        stored_items = target_states[target]["items"]
+        for key in list(stored_items):
+            if key not in target_items[target] and key not in completed_keys:
+                stored_items.pop(key, None)
+        for key, item in target_items[target].items():
+            remember_ha_target_item(stored_items.setdefault(key, {}), item)
+        for key in completed_keys:
+            if key not in target_items[target] and key in stored_items:
+                stored_items[key]["status"] = STATUS_COMPLETED
+                stored_items[key]["last_seen"] = time.time()
+
+    ha_state["updated_at"] = time.time()
+    return writes
+
+
 def sync_account_with_alexa_client(
     alexa: Any,
     client: HomeAssistantClient,
@@ -115,7 +320,7 @@ def sync_account_with_alexa_client(
         raise RuntimeError("Amazon-Session ist nicht authentifiziert.")
 
     writes = 0
-    targets = settings.get("ha_lists") or ([settings["ha_list"]] if settings.get("ha_list") else [])
+    targets = configured_ha_targets(settings)
     for target_index, ha_entity in enumerate(targets):
         target_state = get_internal_target_state(
             account_state,
@@ -144,6 +349,7 @@ def sync_internal_alexa_once(
     account_settings["remove_completed"] = False
     accounts = enabled_amazon_accounts(settings)
     account_settings["allow_missing_completion"] = len(accounts) == 1
+    writes += sync_ha_targets(client, settings, state)
 
     for account in accounts:
         account_state = get_internal_account_state(state, account["id"])
@@ -187,7 +393,7 @@ def sync_internal_alexa_once(
         raise RuntimeError("Sync teilweise fehlgeschlagen: " + "; ".join(errors))
 
     if settings["remove_completed"]:
-        for ha_entity in settings.get("ha_lists") or ([settings["ha_list"]] if settings.get("ha_list") else []):
+        for ha_entity in configured_ha_targets(settings):
             LOGGER.info("Removing completed items from %s", ha_entity)
             client.remove_completed_items(ha_entity)
             writes += 1

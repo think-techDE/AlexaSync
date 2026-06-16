@@ -72,13 +72,15 @@ speichert nur die daraus extrahierten Cookies pro importiertem Konto unter
 ## Synchronisation
 
 Mehrere Amazon-Konten und mehrere Home-Assistant-Ziel-Listen koennen
-synchronisiert werden. Alle ausgewaehlten Ziel-Listen werden mit derselben
-Alexa-Einkaufsliste abgeglichen.
+synchronisiert werden. Alle ausgewaehlten Ziel-Listen werden direkt miteinander
+gespiegelt und mit derselben Alexa-Einkaufsliste abgeglichen.
 
 | Situation | Verhalten |
 | --- | --- |
 | Neuer Artikel in Alexa | Wird in alle Ziel-Listen geschrieben. |
+| Neuer Artikel in einer Ziel-Liste | Wird in die anderen Ziel-Listen geschrieben. |
 | Neuer Artikel in einer Ziel-Liste | Wird in alle aktiven Alexa-Listen geschrieben. |
+| Artikel in einer Ziel-Liste erledigt | Wird in den anderen Ziel-Listen als erledigt markiert. |
 | Artikel in der Ziel-Liste erledigt | Wird aus den Alexa-Listen entfernt. |
 | Bekannter Artikel verschwindet aus einer Ziel-Liste | Wird als Loeschung/Erledigung behandelt und aus Alexa entfernt. |
 | Artikel verschwindet aus Alexa | Wird in den Ziel-Listen als erledigt markiert. |

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.19
+
+- Ausgewaehlte Home-Assistant-Ziel-Listen werden nun direkt miteinander synchronisiert.
+- Neue Eintraege in einer Ziel-Liste werden in die anderen Ziel-Listen uebernommen.
+- Erledigte oder verschwundene bekannte Eintraege in einer Ziel-Liste werden in den anderen Ziel-Listen als erledigt markiert.
+- Ein Bulk-Schutz verhindert Massen-Erledigungen, wenn eine HA-Liste unvollstaendig gelesen wurde.
+
 ## 0.9.18
 
 - Bekannte Home-Assistant-Eintraege, die aus einer Ziel-Liste verschwinden, werden nun als Loeschung/Erledigung behandelt und aus Alexa entfernt.
