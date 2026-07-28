@@ -81,11 +81,17 @@ def normalize_status(status: Any) -> str:
 
 
 def index_items(items: list[TodoItem]) -> dict[str, TodoItem]:
-    """Index items by normalized summary."""
+    """Index items by normalized summary, preferring active occurrences."""
     indexed: dict[str, TodoItem] = {}
     for item in items:
         key = normalize_summary(item.summary)
-        if key and key not in indexed:
+        if not key:
+            continue
+        existing = indexed.get(key)
+        if existing is None or (
+            existing.status == STATUS_COMPLETED
+            and item.status == STATUS_NEEDS_ACTION
+        ):
             indexed[key] = item
     return indexed
 

@@ -1,5 +1,5 @@
 name: Alexa Sync
-version: "0.9.19"
+version: "0.9.20"
 slug: alexa_sync
 description: Synchronize the Alexa shopping list with Home Assistant to-do lists.
 url: https://github.com/think-techDE/AlexaSync

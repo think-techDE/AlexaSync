@@ -161,6 +161,54 @@ def remember_ha_target_item(item_state: dict[str, Any], item: TodoItem) -> None:
     item_state["last_seen"] = time.time()
 
 
+def is_new_active_occurrence(
+    item: TodoItem | None,
+    item_state: dict[str, Any],
+    *,
+    uid_key: str,
+    status_key: str,
+    missing_uid_is_new: bool,
+) -> bool:
+    """Return whether an active item is a new occurrence of a reused name."""
+    if item is None or item.status != STATUS_NEEDS_ACTION:
+        return False
+
+    stored_uid = item_state.get(uid_key)
+    if not stored_uid:
+        return missing_uid_is_new
+    return stored_uid != item.uid or item_state.get(status_key) == STATUS_COMPLETED
+
+
+def reset_reused_item_state(
+    item_state: dict[str, Any],
+    *,
+    alexa_item: TodoItem | None,
+    ha_item: TodoItem | None,
+) -> tuple[bool, bool]:
+    """Drop historical decisions when either side created a new occurrence."""
+    new_alexa_occurrence = is_new_active_occurrence(
+        alexa_item,
+        item_state,
+        uid_key="a_uid",
+        status_key="a_status",
+        missing_uid_is_new=False,
+    )
+    new_ha_occurrence = is_new_active_occurrence(
+        ha_item,
+        item_state,
+        uid_key="b_uid",
+        status_key="b_status",
+        missing_uid_is_new=False,
+    )
+    if new_alexa_occurrence or new_ha_occurrence:
+        LOGGER.info(
+            "Resetting stale sync history for newly created '%s'",
+            (ha_item or alexa_item).summary,
+        )
+        item_state.clear()
+    return new_alexa_occurrence, new_ha_occurrence
+
+
 def sync_ha_targets(
     client: HomeAssistantClient,
     settings: dict[str, Any],
@@ -216,6 +264,43 @@ def sync_ha_targets(
             for target in targets:
                 if target not in unreliable_targets:
                     target_states[target]["items"].pop(key, None)
+            continue
+
+        new_active_sources = [
+            (target, item)
+            for target, item in current_by_target.items()
+            if is_new_active_occurrence(
+                item,
+                target_states[target]["items"].get(key) or {},
+                uid_key="uid",
+                status_key="status",
+                missing_uid_is_new=True,
+            )
+        ]
+        if new_active_sources:
+            source_target, source_item = new_active_sources[0]
+            for target, item in current_by_target.items():
+                if (
+                    target in unreliable_targets
+                    or (item is not None and item.status == STATUS_NEEDS_ACTION)
+                ):
+                    continue
+                LOGGER.info(
+                    "Creating new occurrence of '%s' in %s because it was newly added in %s",
+                    source_item.summary,
+                    target,
+                    source_target,
+                )
+                client.add_item(target, source_item)
+                added_item = TodoItem(
+                    uid=source_item.summary,
+                    summary=source_item.summary,
+                    status=STATUS_NEEDS_ACTION,
+                    description=source_item.description,
+                )
+                target_items[target][key] = added_item
+                current_by_target[target] = added_item
+                writes += 1
             continue
 
         completion_source = False
@@ -429,6 +514,32 @@ def sync_alexa_items_with_ha(
         if alexa_item is None and ha_item is None:
             stored_items.pop(key, None)
             continue
+
+        new_alexa_occurrence, _new_ha_occurrence = reset_reused_item_state(
+            item_state,
+            alexa_item=alexa_item,
+            ha_item=ha_item,
+        )
+        if (
+            new_alexa_occurrence
+            and alexa_item is not None
+            and ha_item is not None
+            and ha_item.status == STATUS_COMPLETED
+        ):
+            LOGGER.info(
+                "Creating new occurrence of '%s' in %s because Alexa added it again",
+                alexa_item.summary,
+                ha_entity,
+            )
+            client.add_item(ha_entity, alexa_item)
+            writes += 1
+            ha_item = TodoItem(
+                uid=alexa_item.summary,
+                summary=alexa_item.summary,
+                status=STATUS_NEEDS_ACTION,
+                description=alexa_item.description,
+            )
+            ha_items[key] = ha_item
 
         if alexa_item is None and ha_item is not None:
             item_state.pop("ha_only_baseline", None)

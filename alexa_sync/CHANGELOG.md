@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.20
+
+- Neu angelegte Eintraege mit einem bereits frueher verwendeten Namen werden als neue Vorkommen erkannt.
+- Alte Erledigt- oder Verschwunden-Zustaende koennen neue gleichnamige Eintraege nicht mehr automatisch erledigen.
+- Bei doppelten Namen hat ein offener Eintrag Vorrang vor einem historischen erledigten Eintrag.
+
 ## 0.9.19
 
 - Ausgewaehlte Home-Assistant-Ziel-Listen werden nun direkt miteinander synchronisiert.
